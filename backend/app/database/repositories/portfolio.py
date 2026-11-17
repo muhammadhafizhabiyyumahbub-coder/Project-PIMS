@@ -15,6 +15,7 @@ from app.database.models import (
     Holding,
     MarketCandle,
     Portfolio,
+    PortfolioSnapshot,
     Transaction,
 )
 
@@ -152,6 +153,41 @@ def ledger_entries(session: Session, portfolio_id: uuid.UUID) -> list[CashLedger
     )
 
 
+def get_snapshot(session: Session, snapshot_id: uuid.UUID) -> PortfolioSnapshot | None:
+    return session.get(PortfolioSnapshot, snapshot_id)
+
+
+def find_snapshot_by_idempotency_key(
+    session: Session, portfolio_id: uuid.UUID, idempotency_key: str
+) -> PortfolioSnapshot | None:
+    """JSONB lookup for idempotency key without changing schema-spec §5.5 columns."""
+    return session.scalars(
+        select(PortfolioSnapshot).where(
+            PortfolioSnapshot.portfolio_id == portfolio_id,
+            PortfolioSnapshot.snapshot_metadata["idempotency_key"].astext == idempotency_key,
+        )
+    ).first()
+
+
+def list_snapshots_page(
+    session: Session,
+    portfolio_id: uuid.UUID,
+    limit: int = 50,
+    cursor_snapshot: PortfolioSnapshot | None = None,
+) -> tuple[list[PortfolioSnapshot], bool]:
+    """Deterministic (snapshot_at, id) ordering, same cursor style as transactions."""
+    query = select(PortfolioSnapshot).where(PortfolioSnapshot.portfolio_id == portfolio_id)
+    if cursor_snapshot is not None:
+        query = query.where(
+            (PortfolioSnapshot.snapshot_at, PortfolioSnapshot.id)
+            > (cursor_snapshot.snapshot_at, cursor_snapshot.id)
+        )
+    query = query.order_by(PortfolioSnapshot.snapshot_at, PortfolioSnapshot.id).limit(limit + 1)
+    rows = list(session.scalars(query))
+    has_more = len(rows) > limit
+    return rows[:limit], has_more
+
+
 def ledger_entries_for_transaction(
     session: Session, transaction_id: uuid.UUID
 ) -> list[CashLedgerEntry]:
@@ -228,8 +264,8 @@ def latest_close_price(session: Session, asset_id: uuid.UUID) -> tuple[float, da
     return float(close_price), (close_time or open_time)
 
 
-def add_snapshot(session: Session, **values) -> None:
-    from app.database.models import PortfolioSnapshot
-
-    session.add(PortfolioSnapshot(**values))
+def add_snapshot(session: Session, **values) -> PortfolioSnapshot:
+    snapshot = PortfolioSnapshot(**values)
+    session.add(snapshot)
     session.flush()
+    return snapshot

@@ -605,7 +605,31 @@ Implementasi: `backend/app/engines/portfolio/cost_basis.py`.
    - Outflow BUY = `quantity * price + fee`, dibandingkan terhadap saldo cash portfolio pada currency transaksi. Batas: `outflow <= balance` lolos (termasuk persis 0 setelah transaksi); kekurangan 1 unit terkecil (1e-12, presisi NUMERIC(30,12)) sudah ditolak.
    - Penolakan terjadi sebelum penulisan apa pun; transaksi atomik (schema-spec §15.1) — tidak ada baris transactions/cash_ledger/holdings yang tertinggal.
    - Leverage/margin adalah keputusan fase lanjut dengan Risk Engine.
-   - Batas diketahui (menunggu keputusan owner): SELL dengan fee > proceeds menghasilkan ledger negatif; aturan ini belum mencakup kasus itu karena SELL diasumsikan menambah cash.
+   - Batas diketahui (ditutup oleh §7.9): SELL dengan fee > proceeds menghasilkan ledger negatif; aturan ini belum mencakup kasus itu karena SELL diasumsikan menambah cash.
+
+# 7.9 SELL Net-Proceeds Guard & Portfolio Snapshot Decisions (Stage F)
+
+**Status:** APPROVED (2026-11-17, Project Owner).
+
+1. **SELL dengan net proceeds `<= 0` DITOLAK (422 `FEE_EXCEEDS_PROCEEDS`).**
+   - Net proceeds = `quantity * price - fee`, dihitung pada presisi kuantisasi yang sama dengan cash ledger (NUMERIC(30,12)).
+   - Penolakan terjadi sebelum penulisan apa pun: tidak ada baris `transactions`, `cash_ledger_entries`, atau `holdings` yang tertinggal (schema-spec §15.1).
+   - Ini menutup batas yang dicatat di §7.8 poin 2: tidak ada hasil SELL yang boleh mengurangi cash.
+   - Batas: fee negatif tetap tidak didukung (fee divalidasi non-negatif di service); short selling tetap ditolak (Stage E).
+
+2. **Portfolio snapshot ditulis MANUAL lewat endpoint, bukan penjadwalan otomatis.**
+   - `POST /portfolios/{id}/snapshots` menjalankan valuation engine saat itu dan menyimpan satu baris `portfolio_snapshots` (schema-spec §5.5).
+   - Penjadwalan otomatis (cron/scheduler) DITUNDA; tidak ada dependency scheduler ditambahkan. Bila nanti dibutuhkan, scheduler harus memanggil jalur service yang sama.
+   - Snapshot berisi `valuation_status` (COMPLETE/PARTIAL/STALE/UNAVAILABLE) dan alasan yang dapat dibaca manusia di `metadata.status_reason`.
+   - Nilai yang tidak dapat dihitung valuation disimpan `NULL`, tidak pernah 0 atau angka karangan (portfolio-engine-spec §8.4). `cash_value` tetap diisi bila cash diketahui.
+
+3. **Aturan anti-duplikat snapshot: `Idempotency-Key` header (opsional), disimpan di `metadata` JSONB.**
+   - Alasan pilihan: schema-spec §5.5 tidak punya kolom idempotency, dan menambah kolom berarti perubahan schema di luar §5.5. JSONB `metadata` sudah tersedia, jadi aturan ini tidak mengubah schema.
+   - POST dengan key yang sudah pernah dipakai untuk portfolio yang sama → mengembalikan baris lama (`idempotent_replay: true`, HTTP 200), tidak menulis baris kedua.
+   - POST tanpa key → setiap panggilan adalah snapshot manual baru, karena portofolio boleh di-snapshot berkali-kali pada waktu berbeda. Ini disengaja, bukan duplikat menyesatkan.
+   - Batas diketahui: pencarian key memakai JSONB lookup tanpa index unik, sehingga balapan dua request bersamaan dengan key sama secara teori bisa menghasilkan dua baris. Untuk pemakaian manual satu pengguna risikonya dapat diabaikan; bila snapshot jadi otomatis/paralel, tambahkan unique index (butuh approval schema).
+
+4. **Uang di API = decimal string, di DB = NUMERIC(30,12).** Snapshot tidak menambah format baru; memakai `serialize_money` yang sudah disepakati (api-spec §4.3, trailing zeros stripped, `null` tetap `null`).
 
 # 8. Market Scanner Decisions
 

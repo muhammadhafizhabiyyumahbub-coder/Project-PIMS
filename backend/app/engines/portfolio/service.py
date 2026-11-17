@@ -27,6 +27,20 @@ SUPPORTED_TYPES = ("BUY", "SELL", "DEPOSIT", "WITHDRAWAL", "FEE", "DIVIDEND", "I
 ASSET_TYPES = ("BUY", "SELL")
 CASH_TYPES = ("DEPOSIT", "WITHDRAWAL", "FEE", "DIVIDEND", "INTEREST")
 
+SNAPSHOT_STATUS_REASONS = {
+    "COMPLETE": "All held positions priced from fresh stored candles; totals are final.",
+    "PARTIAL": "At least one position has no stored price; unavailable values are stored as NULL.",
+    "STALE": "Stored prices are older than the freshness policy; values are withheld, not estimated.",
+    "UNAVAILABLE": "No transactions or holdings; only cash (if any) is meaningful.",
+}
+
+
+def serialize_optional(value) -> str | None:
+    """Decimal -> plain string, None stays None (api-spec §4.3: no zero placeholder)."""
+    if value is None:
+        return None
+    return format(Decimal(str(value)).normalize(), "f")
+
 
 class TransactionError(Exception):
     """Rejected transaction; nothing is written."""
@@ -184,6 +198,12 @@ def _record_asset_transaction(
                 "INSUFFICIENT_HOLDINGS",
                 f"SELL {quantity_d} exceeds available holdings {available} (shorting unsupported)",
             )
+        net_proceeds = quantize(gross) - quantize(fee)
+        if net_proceeds <= 0:
+            raise TransactionError(
+                "FEE_EXCEEDS_PROCEEDS",
+                f"SELL net proceeds {net_proceeds} must be positive (fee {fee} >= gross {gross})",
+            )
 
     if transaction_type == "BUY":
         # Owner decision §7.8 (2026-11-17): no margin in MVP. BUY outflow is
@@ -322,36 +342,55 @@ def write_snapshot(
     session,
     portfolio_id: uuid.UUID,
     valuation,
-) -> uuid.UUID:
-    """Persist a portfolio snapshot row from a ValuationResult."""
-    snapshot_at = datetime.now(timezone.utc)
-    from app.database.models import PortfolioSnapshot
+    idempotency_key: str | None = None,
+) -> tuple[uuid.UUID, bool]:
+    """Persist one snapshot from a ValuationResult; returns (id, created).
 
-    snapshot = PortfolioSnapshot(
+    Duplicate protection (owner decision §7.9, simplest honest rule): when an
+    Idempotency-Key header is supplied, a snapshot already stored under that key
+    for this portfolio is returned as-is (created=False) instead of writing a
+    second row. Without a key every manual POST is a new snapshot, because a
+    portfolio can legitimately be snapshotted twice in a row.
+
+    Values the valuation could not produce are stored as NULL, never zero
+    (portfolio-engine-spec §8.4); the status and a human-readable reason go in
+    metadata so an incomplete snapshot explains itself.
+    """
+    if idempotency_key is not None:
+        existing = repo.find_snapshot_by_idempotency_key(session, portfolio_id, idempotency_key)
+        if existing is not None:
+            return existing.id, False
+
+    metadata = {
+        "idempotency_key": idempotency_key,
+        "realized_pnl": serialize_optional(valuation.realized_pnl),
+        "unrealized_pnl": serialize_optional(valuation.unrealized_pnl),
+        "valued_at": valuation.valued_at.isoformat(),
+        "status_reason": SNAPSHOT_STATUS_REASONS.get(
+            valuation.valuation_status, valuation.valuation_status
+        ),
+        "positions": [
+            {
+                "asset_id": str(p.asset_id),
+                "symbol": p.symbol,
+                "quantity": serialize_optional(p.quantity),
+                "market_price": serialize_optional(p.market_price),
+                "market_value": serialize_optional(p.market_value),
+                "price_status": p.price_status,
+            }
+            for p in valuation.positions
+        ],
+    }
+    snapshot = repo.add_snapshot(
+        session,
         portfolio_id=portfolio_id,
-        snapshot_at=snapshot_at,
+        snapshot_at=valuation.valued_at,
         total_value=valuation.total_value,
         cash_value=valuation.cash_value,
         invested_value=valuation.invested_value,
         reporting_currency=valuation.reporting_currency,
         valuation_status=valuation.valuation_status,
-        snapshot_metadata={
-            "realized_pnl": str(valuation.realized_pnl),
-            "unrealized_pnl": str(valuation.unrealized_pnl)
-            if valuation.unrealized_pnl is not None
-            else None,
-            "positions": [
-                {
-                    "asset_id": str(p.asset_id),
-                    "symbol": p.symbol,
-                    "quantity": str(p.quantity),
-                    "market_price": str(p.market_price) if p.market_price is not None else None,
-                    "price_status": p.price_status,
-                }
-                for p in valuation.positions
-            ],
-        },
+        snapshot_metadata=metadata,
     )
-    session.add(snapshot)
     session.commit()
-    return snapshot.id
+    return snapshot.id, True

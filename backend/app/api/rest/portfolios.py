@@ -5,12 +5,13 @@ no financial computation happens here (AGENTS.md §7.1).
 """
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from app.api.envelope import error_response, success_response
 from app.core.db import get_db
 from app.database.repositories import portfolio as repo
+from app.engines.portfolio.service import write_snapshot
 from app.engines.portfolio.valuation import value_portfolio
 from app.schemas.portfolio import PortfolioCreate, PortfolioUpdate, serialize_money
 
@@ -192,4 +193,77 @@ def get_valuation(portfolio_id: str, db: Session = Depends(get_db)):
                 for p in valuation.positions
             ],
         }
+    )
+
+
+def _snapshot_payload(snapshot) -> dict:
+    metadata = snapshot.snapshot_metadata or {}
+    return {
+        "id": str(snapshot.id),
+        "portfolio_id": str(snapshot.portfolio_id),
+        "snapshot_at": snapshot.snapshot_at.isoformat(),
+        "total_value": serialize_money(snapshot.total_value),
+        "cash_value": serialize_money(snapshot.cash_value),
+        "invested_value": serialize_money(snapshot.invested_value),
+        "reporting_currency": snapshot.reporting_currency,
+        "valuation_status": snapshot.valuation_status,
+        "status_reason": metadata.get("status_reason"),
+        "positions": metadata.get("positions", []),
+        "created_at": snapshot.created_at.isoformat(),
+    }
+
+
+@router.post("/{portfolio_id}/snapshots", status_code=201)
+def create_snapshot(
+    portfolio_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    """Manual snapshot (owner decision §7.9). Scheduled snapshots are deferred.
+
+    Values the valuation cannot produce are stored NULL, never estimated.
+    """
+    pid = parse_uuid(portfolio_id)
+    if pid is None or repo.get_portfolio(db, pid) is None:
+        return error_response("NOT_FOUND", f"portfolio {portfolio_id} not found", 404)
+    valuation = value_portfolio(db, pid)
+    snapshot_id, created = write_snapshot(db, pid, valuation, idempotency_key)
+    snapshot = repo.get_snapshot(db, snapshot_id)
+    return success_response(
+        {**_snapshot_payload(snapshot), "idempotent_replay": not created},
+        status_code=201 if created else 200,
+    )
+
+
+@router.get("/{portfolio_id}/snapshots")
+def list_snapshots(
+    portfolio_id: str,
+    limit: int = 50,
+    cursor: str | None = None,
+    db: Session = Depends(get_db),
+):
+    if limit < 1 or limit > 200:
+        return error_response("VALIDATION_ERROR", "limit must be between 1 and 200", 422)
+    pid = parse_uuid(portfolio_id)
+    if pid is None or repo.get_portfolio(db, pid) is None:
+        return error_response("NOT_FOUND", f"portfolio {portfolio_id} not found", 404)
+    cursor_snapshot = None
+    if cursor:
+        cursor_id = parse_uuid(cursor)
+        if cursor_id is None:
+            return error_response("VALIDATION_ERROR", "invalid cursor", 422)
+        cursor_snapshot = repo.get_snapshot(db, cursor_id)
+        if cursor_snapshot is None or cursor_snapshot.portfolio_id != pid:
+            return error_response("VALIDATION_ERROR", "invalid cursor", 422)
+    rows, has_more = repo.list_snapshots_page(db, pid, limit=limit, cursor_snapshot=cursor_snapshot)
+    return success_response(
+        [_snapshot_payload(s) for s in rows],
+        meta={
+            "count": len(rows),
+            "pagination": {
+                "limit": limit,
+                "next_cursor": str(rows[-1].id) if has_more and rows else None,
+                "has_more": has_more,
+            },
+        },
     )
