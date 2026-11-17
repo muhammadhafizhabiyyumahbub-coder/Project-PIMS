@@ -552,6 +552,31 @@ Implementasi: `backend/app/engines/portfolio/cost_basis.py`.
    - Alasan: qualification per instrumen (gating scanner + AI research) membutuhkan risk level aset; portfolio-scope menunggu Phase 3/4.
    - Dampak: ketika portfolio risk diimplementasikan, harus diputuskan memakai kolom nullable tambahan atau tabel terpisah. Kolom `portfolio_id` pada spec §7.3 belum ada di tabel saat ini dan akan ditambahkan lewat migration saat dibutuhkan.
 
+# 7.6 Portfolio API & Frontend Decisions (Stage B/C)
+
+**Status:** APPROVED (2026-11-17, Project Owner) — seluruh item di bawah ini disetujui setelah review Stage B.
+
+1. **Nama field currency portfolio: `base_currency` di API ↔ `reporting_currency` di DB.**
+   - Alasan: api-spec §8.2 memakai `base_currency` sebagai kontrak publik; kolom DB mengikuti schema-spec §5.1 (`reporting_currency`). Mapping dilakukan di layer API, schema tidak berubah.
+
+2. **Nama field fee: `fee` di API ↔ `fee_amount` di DB.**
+   - Alasan: api-spec §9.2 memakai `fee`; kolom DB `fee_amount` (schema-spec §5.2). Mapping di layer API.
+
+3. **Endpoint valuation baru `GET /api/v1/portfolios/{id}/valuation`.**
+   - Alasan: api-spec §8–§10 tidak mendefinisikan endpoint valuation, padahal dashboard dan halaman portfolio membutuhkannya (dashboard-spec §6: nilai portfolio berasal dari Portfolio Engine). Bentuk response mengikuti portfolio-engine-spec §8 (status model COMPLETE/PARTIAL/STALE/UNAVAILABLE) + api-spec §5.3 (money as decimal string).
+
+4. **DELETE portfolio yang memiliki transaksi → HTTP 409; arsip lewat `PATCH status=ARCHIVED`.**
+   - Alasan: riwayat finansial tidak boleh hilang diam-diam (api-spec §8.4, schema-spec §14). Portfolio tanpa transaksi tetap bisa dihapus.
+
+5. **Semantik null vs nol pada valuation: `invested_value` = `"0"` hanya bila tidak ada posisi sama sekali (nol sungguhan); `null` bila ada posisi tetapi harga tidak tersedia (PARTIAL/STALE). `total_value` dan `unrealized_pnl` hanya diisi saat COMPLETE.**
+   - Alasan: api-spec §4.3 melarang nilai nol menggantikan data yang tidak tersedia; nol hanya dipakai ketika memang benar-benar nol. Perbedaan ini ditulis eksplisit di docstring `value_portfolio` dan harus dijaga oleh setiap konsumen API.
+
+6. **Idempotency key yang sudah dipakai dengan payload berbeda → HTTP 409 `CONFLICT` (bukan 422).**
+   - Alasan: api-spec §22 mewajibkan penanganan konflik key/payload; konflik adalah kesalahan klien pada resource yang sama (409 Conflict), bukan pelanggaran validasi bisnis (422). Replay dengan payload sama tetap 200 + `idempotent_replay: true`.
+
+7. **Withdrawal melebihi saldo cash → 422 `BUSINESS_RULE_ERROR` (`INSUFFICIENT_CASH`).**
+   - Alasan: aturan MVP — tidak ada overdraft. Ini aturan MVP, bukan aturan abadi; revisi menunggu keputusan credit/margin di Phase lanjutan.
+
 # 8. Market Scanner Decisions
 
 ## 8.1 Independent Scanner Engine

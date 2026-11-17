@@ -47,6 +47,7 @@ export default function OpportunitiesSection() {
   const [sort, setSort] = useState<SortField>("scanner_score");
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const loading = rows === null && loadError === null;
 
   const fetchRows = useCallback(async (): Promise<Opportunity[]> => {
@@ -74,7 +75,9 @@ export default function OpportunitiesSection() {
     return () => {
       cancelled = true;
     };
-  }, [fetchRows]);
+  }, [fetchRows, reloadKey]);
+
+  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
   const runAction = useCallback(
     async (id: string) => {
@@ -170,7 +173,7 @@ export default function OpportunitiesSection() {
       {loadError !== null && (
         <div role="alert" className="mx-4 my-3 rounded border border-loss-line bg-loss-bg px-3 py-2 text-[12px] text-loss">
           {loadError}
-          <button type="button" onClick={() => void load()} className="ml-2 underline underline-offset-2">
+          <button type="button" onClick={reload} className="ml-2 underline underline-offset-2">
             Retry
           </button>
         </div>

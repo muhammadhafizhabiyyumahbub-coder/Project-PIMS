@@ -92,3 +92,74 @@ export interface Envelope<T> {
 export interface ApiError {
   error: { code: string; message: string; details?: unknown[] };
 }
+
+// --- Portfolio domain (api-spec §8–§10) -------------------------------------
+// All monetary fields are decimal strings from the backend (api-spec §5.3).
+// They must never be converted to Number for arithmetic or comparison.
+
+export interface Portfolio {
+  id: string;
+  name: string;
+  description: string | null;
+  base_currency: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Transaction {
+  id: string;
+  portfolio_id: string;
+  asset_id: string | null;
+  transaction_type: string;
+  quantity: string | null;
+  price: string | null;
+  gross_amount: string | null;
+  fee: string | null;
+  currency: string;
+  executed_at: string;
+  idempotency_key: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface Holding {
+  asset_id: string;
+  symbol: string;
+  quantity: string | null;
+  average_cost: string | null;
+  cost_basis: string | null;
+  market_price: string | null;
+  market_value: string | null;
+  unrealized_pnl: string | null;
+  realized_pnl: string | null;
+  price_status: string;
+  price_time: string | null;
+  currency: string;
+  valuation_timestamp: string;
+}
+
+export interface ValuationPosition {
+  asset_id: string;
+  symbol: string;
+  quantity: string | null;
+  average_cost: string | null;
+  cost_basis: string | null;
+  market_price: string | null;
+  market_value: string | null;
+  price_status: string;
+  unrealized_pnl: string | null;
+}
+
+export interface Valuation {
+  portfolio_id: string;
+  valuation_status: string;
+  reporting_currency: string;
+  cash_value: string | null;
+  invested_value: string | null;
+  total_value: string | null;
+  realized_pnl: string | null;
+  unrealized_pnl: string | null;
+  valued_at: string;
+  positions: ValuationPosition[];
+}

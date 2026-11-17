@@ -4,10 +4,14 @@ import type {
   Candle,
   CandlesResponse,
   Envelope,
+  Holding,
   Opportunity,
+  Portfolio,
   ResearchJob,
   ResearchReport,
   ScannerRunSummary,
+  Transaction,
+  Valuation,
 } from "@/types/api";
 
 export class ApiRequestError extends Error {
@@ -104,6 +108,69 @@ export function requestResearch(
 
 export function getResearchReport(reportId: string): Promise<Envelope<ResearchReport>> {
   return request<ResearchReport>(`/api/v1/research/reports/${encodeURIComponent(reportId)}`);
+}
+
+// --- Portfolio API (api-spec §8–§10) -----------------------------------------
+
+export function listPortfolios(): Promise<Envelope<Portfolio[]>> {
+  return request<Portfolio[]>(`/api/v1/portfolios`);
+}
+
+export function getPortfolio(portfolioId: string): Promise<Envelope<Portfolio>> {
+  return request<Portfolio>(`/api/v1/portfolios/${encodeURIComponent(portfolioId)}`);
+}
+
+export function createPortfolio(body: { name: string; description?: string; base_currency: string }): Promise<Envelope<Portfolio>> {
+  return request(`/api/v1/portfolios`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updatePortfolio(
+  portfolioId: string,
+  body: { name?: string; description?: string | null; status?: string },
+): Promise<Envelope<Portfolio>> {
+  return request(`/api/v1/portfolios/${encodeURIComponent(portfolioId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function getHoldings(portfolioId: string): Promise<Envelope<Holding[]>> {
+  return request<Holding[]>(`/api/v1/portfolios/${encodeURIComponent(portfolioId)}/holdings`);
+}
+
+export function getValuation(portfolioId: string): Promise<Envelope<Valuation>> {
+  return request<Valuation>(`/api/v1/portfolios/${encodeURIComponent(portfolioId)}/valuation`);
+}
+
+export function listTransactions(
+  portfolioId: string,
+  cursor?: string,
+): Promise<Envelope<Transaction[]>> {
+  const suffix = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+  return request<Transaction[]>(
+    `/api/v1/transactions?portfolio_id=${encodeURIComponent(portfolioId)}&limit=50${suffix}`,
+  );
+}
+
+export function createTransaction(body: {
+  portfolio_id: string;
+  transaction_type: string;
+  asset_id?: string;
+  quantity?: string;
+  price?: string;
+  gross_amount?: string;
+  fee?: string;
+}): Promise<Envelope<Transaction>> {
+  return request(`/api/v1/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 export type { Candle, CandlesResponse, Opportunity, ResearchJob, ResearchReport, ScannerRunSummary };

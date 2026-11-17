@@ -6,6 +6,7 @@ const TONES: Record<string, string> = {
   QUALIFIED: "bg-gain-bg text-gain border-gain-line",
   LIVE: "bg-gain-bg text-gain border-gain-line",
   COMPLETED: "bg-gain-bg text-gain border-gain-line",
+  COMPLETE: "bg-gain-bg text-gain border-gain-line",
   // Failure states
   FAILED: "bg-loss-bg text-loss border-loss-line",
   NOT_QUALIFIED: "bg-loss-bg text-loss border-loss-line",
