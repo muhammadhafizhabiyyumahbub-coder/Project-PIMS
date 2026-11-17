@@ -631,6 +631,29 @@ Implementasi: `backend/app/engines/portfolio/cost_basis.py`.
 
 4. **Uang di API = decimal string, di DB = NUMERIC(30,12).** Snapshot tidak menambah format baru; memakai `serialize_money` yang sudah disepakati (api-spec §4.3, trailing zeros stripped, `null` tetap `null`).
 
+# 7.10 Performance Engine Decisions (Stage H)
+
+**Status:** APPROVED (2026-11-17, Project Owner).
+
+1. **Time-Weighted Return (TWR) adalah metrik utama** (portfolio-engine-spec §10.3).
+   Periode dibagi pada setiap external cash flow (DEPOSIT/WITHDRAWAL dari cash_ledger).
+   Sub-periode (disetujui owner): `r_i = (EMV_i - CF_i) / BMV_i - 1`; CF positif untuk deposit, negatif untuk withdrawal.
+   Hasil: `TWR = (∏(1+r_i)) - 1`; timing dan ukuran kontribusi tidak mengubah pengukuran return.
+
+2. **Simple Return hanya dilaporkan bila periode bebas external cash flow** (spec §10.2).
+   Bila ada external cash flow, `simple_return` = null dengan alasan yang menjelaskan mengapa campuran kontribusi tidak diperhitungkan.
+
+3. **CAGR hanya dilaporkan bila**: TWR tersedia, beginning value > 0, years > 0, dan periode >= 365 hari (spec §10.5).
+   Selain itu null + alasan.
+
+4. **MWR / IRR / XIRR ditunda** (butuh solver; diputuskan terpisah). Tidak diimplementasikan Stage H.
+
+5. **Snapshot yang sudah disimpan digunakan sebagai boundary valuation, toleransi ±1 hari.** Bila tidak ada snapshot cukup dekat dengan titik batas sub-periode → `TWR = UNAVAILABLE` dengan alasan yang jelas; tidak ada angka karangan atau interpolasi.
+
+6. **Semua aritmetika Decimal, tidak ada float.** Return diserialisasi sebagai decimal string dengan skala 12 desimal; `null` tetap `null`.
+
+7. **Endpoint read-only `GET /portfolios/{id}/performance?start=&end=`** dengan envelope standar. Tidak ada persistence ke tabel analytics (persistence ronde terpisah).
+
 # 8. Market Scanner Decisions
 
 ## 8.1 Independent Scanner Engine

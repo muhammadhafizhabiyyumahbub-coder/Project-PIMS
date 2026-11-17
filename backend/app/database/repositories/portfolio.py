@@ -3,8 +3,9 @@
 Functions here only read/write rows; they never commit. Transaction boundaries
 belong to the calling service so financial writes stay atomic (schema-spec §15.1).
 """
+
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -47,7 +48,7 @@ def update_portfolio(session: Session, portfolio: Portfolio, **values) -> Portfo
     for field, value in values.items():
         if value is not None:
             setattr(portfolio, field, value)
-    portfolio.updated_at = datetime.now(timezone.utc)
+    portfolio.updated_at = datetime.now(UTC)
     session.flush()
     return portfolio
 
@@ -59,9 +60,7 @@ def delete_portfolio(session: Session, portfolio: Portfolio) -> None:
 
 def has_transactions(session: Session, portfolio_id: uuid.UUID) -> bool:
     return (
-        session.query(Transaction.id)
-        .filter(Transaction.portfolio_id == portfolio_id)
-        .first()
+        session.query(Transaction.id).filter(Transaction.portfolio_id == portfolio_id).first()
         is not None
     )
 
@@ -188,6 +187,23 @@ def list_snapshots_page(
     return rows[:limit], has_more
 
 
+def list_snapshots_in_range(
+    session: Session,
+    portfolio_id: uuid.UUID,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[PortfolioSnapshot]:
+    """Snapshots ascending by time, optionally bounded. Read-only helper."""
+    query = select(PortfolioSnapshot).where(PortfolioSnapshot.portfolio_id == portfolio_id)
+    if start is not None:
+        query = query.where(PortfolioSnapshot.snapshot_at >= start)
+    if end is not None:
+        query = query.where(PortfolioSnapshot.snapshot_at <= end)
+    return list(
+        session.scalars(query.order_by(PortfolioSnapshot.snapshot_at, PortfolioSnapshot.id))
+    )
+
+
 def ledger_entries_for_transaction(
     session: Session, transaction_id: uuid.UUID
 ) -> list[CashLedgerEntry]:
@@ -201,18 +217,14 @@ def ledger_entries_for_transaction(
 def list_holdings(session: Session, portfolio_id: uuid.UUID) -> list[Holding]:
     return list(
         session.scalars(
-            select(Holding)
-            .where(Holding.portfolio_id == portfolio_id)
-            .order_by(Holding.asset_id)
+            select(Holding).where(Holding.portfolio_id == portfolio_id).order_by(Holding.asset_id)
         )
     )
 
 
 def get_holding(session: Session, portfolio_id: uuid.UUID, asset_id: uuid.UUID) -> Holding | None:
     return session.scalars(
-        select(Holding).where(
-            Holding.portfolio_id == portfolio_id, Holding.asset_id == asset_id
-        )
+        select(Holding).where(Holding.portfolio_id == portfolio_id, Holding.asset_id == asset_id)
     ).first()
 
 

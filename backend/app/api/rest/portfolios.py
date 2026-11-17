@@ -3,7 +3,9 @@
 Route handlers only validate input and orchestrate Stage A engines/repositories;
 no financial computation happens here (AGENTS.md §7.1).
 """
+
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
@@ -11,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.envelope import error_response, success_response
 from app.core.db import get_db
 from app.database.repositories import portfolio as repo
+from app.engines.portfolio.performance import performance_for_portfolio, serialize_return
 from app.engines.portfolio.service import write_snapshot
 from app.engines.portfolio.valuation import value_portfolio
 from app.schemas.portfolio import PortfolioCreate, PortfolioUpdate, serialize_money
@@ -138,7 +141,10 @@ def list_holdings(portfolio_id: str, db: Session = Depends(get_db)):
         return error_response("NOT_FOUND", f"portfolio {portfolio_id} not found", 404)
     valuation = value_portfolio(db, pid)
     return success_response(
-        [_position_payload(p, valuation.reporting_currency, valuation.valued_at) for p in valuation.positions],
+        [
+            _position_payload(p, valuation.reporting_currency, valuation.valued_at)
+            for p in valuation.positions
+        ],
         meta={"valuation_status": valuation.valuation_status},
     )
 
@@ -155,7 +161,9 @@ def get_holding(portfolio_id: str, asset_id: str, db: Session = Depends(get_db))
     position = next((p for p in valuation.positions if p.asset_id == aid), None)
     if position is None:
         return error_response("NOT_FOUND", f"holding for asset {asset_id} not found", 404)
-    return success_response(_position_payload(position, valuation.reporting_currency, valuation.valued_at))
+    return success_response(
+        _position_payload(position, valuation.reporting_currency, valuation.valued_at)
+    )
 
 
 @router.get("/{portfolio_id}/valuation")
@@ -268,4 +276,62 @@ def list_snapshots(
                 "has_more": has_more,
             },
         },
+    )
+
+
+@router.get("/{portfolio_id}/performance")
+def get_performance(
+    portfolio_id: str,
+    start: str | None = None,
+    end: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Performance endpoint (Stage H): TWR, simple return, CAGR, P&L.
+
+    Read-only, zero floats, deterministic Decimal arithmetic.
+    """
+    pid = parse_uuid(portfolio_id)
+    if pid is None or repo.get_portfolio(db, pid) is None:
+        return error_response("NOT_FOUND", f"portfolio {portfolio_id} not found", 404)
+
+    start_dt = None
+    end_dt = None
+    if start:
+        try:
+            start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        except ValueError:
+            return error_response(
+                "VALIDATION_ERROR", "invalid start date format (ISO-8601 required)", 422
+            )
+    if end:
+        try:
+            end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        except ValueError:
+            return error_response(
+                "VALIDATION_ERROR", "invalid end date format (ISO-8601 required)", 422
+            )
+
+    try:
+        result = performance_for_portfolio(db, pid, start=start_dt, end=end_dt)
+    except ValueError as exc:
+        return error_response("VALIDATION_ERROR", str(exc), 422)
+
+    return success_response(
+        {
+            "portfolio_id": str(result.portfolio_id),
+            "reporting_currency": result.reporting_currency,
+            "period_start": result.period_start.isoformat() if result.period_start else None,
+            "period_end": result.period_end.isoformat() if result.period_end else None,
+            "period_days": result.period_days,
+            "return_status": result.return_status,
+            "twr": serialize_return(result.twr),
+            "twr_reason": result.twr_reason,
+            "simple_return": serialize_return(result.simple_return),
+            "simple_return_reason": result.simple_return_reason,
+            "sub_period_count": result.sub_period_count,
+            "cagr": serialize_return(result.cagr),
+            "cagr_reason": result.cagr_reason,
+            "realized_pnl": serialize_money(result.realized_pnl),
+            "unrealized_pnl": serialize_money(result.unrealized_pnl),
+        }
     )

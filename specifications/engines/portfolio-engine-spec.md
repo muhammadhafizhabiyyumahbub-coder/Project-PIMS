@@ -557,7 +557,23 @@ External cash flows harus dipertimbangkan melalui methodology performance yang s
 
 ## 10.6 Performance Methodology Decision
 
-Metode utama performance reporting dan perlakuan terhadap external cash flows harus ditentukan sebelum implementasi final.
+**Keputusan disetujui Project Owner 2026-11-17 (dokumentasikan di technical-decisions.md §7.10).**
+
+1. **Metode utama = TWR (Time-Weighted Return), spec §10.3:** periode dibagi pada setiap external cash flow (DEPOSIT/WITHDRAWAL), lalu `TWR = (∏(1+r_i)) − 1`.
+
+2. **Rumus sub-periode yang disetujui:** `r_i = (EMV_i − CF_i) / BMV_i − 1`, dengan `CF_i` = net external cash flow pada/akhir sub-periode i (deposit positif, withdrawal negatif, diambil dari cash_ledger transaksi DEPOSIT/WITHDRAWAL). Kalau implementasi berbeda dari bentuk ini, hentikan dan tanya Project Owner — jangan diam-diam pakai varian lain.
+
+3. **Simple Return (§10.2) hanya boleh dilaporkan bila tidak ada external cash flow sama sekali dalam periode itu.** Kalau ada, jangan pakai simple return (laporkan null dengan alasan).
+
+4. **MWR / IRR / XIRR ditunda** (butuh solver; diputuskan terpisah). Jangan implementasi sekarang.
+
+5. **CAGR (§10.5) hanya dihitung bila** beginning value > 0, years > 0, dan periode yang diminta >= 365 hari. Selain itu jangan tampilkan (null + alasan).
+
+6. **Valuasi untuk titik batas sub-periode diambil dari snapshot portfolio yang sudah ada.** Bila tidak ada snapshot yang cukup dekat dengan tanggal cash flow (toleransi ±1 hari, atau toleransi lain yang didokumentasikan), maka hasil TWR = UNAVAILABLE dengan alasan jelas — jangan mengarang nilai atau interpolasi tanpa aturan tertulis.
+
+7. **Tidak ada aritmetika float:** semua pakai Decimal. Return diserialisasi sebagai string desimal dengan skala eksplisit (12 desimal).
+
+8. **Endpoint read-only `GET /portfolios/{id}/performance?start=&end=`** dengan envelope yang sudah dipakai. Tanggal opsional; default seluruh riwayat. Jangan menyimpan ke tabel analytics dulu (persistence ronde terpisah).
 
 OpenCode tidak boleh menyamakan simple return, TWR, dan money-weighted return.
 
