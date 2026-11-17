@@ -1,0 +1,88 @@
+"Analytics engine run records and deterministic engine outputs."
+import uuid
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Numeric, String
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.db import Base
+
+
+class AnalyticsRun(Base):
+    __tablename__ = "analytics_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    engine_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assets.id"), nullable=True
+    )
+    timeframe: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    observation_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    observation_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    calculation_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    input_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    execution_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+
+
+class TechnicalResult(Base):
+    __tablename__ = "technical_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False
+    )
+    asset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("assets.id"), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
+    indicator_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    indicator_parameters: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    observation_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    indicator_values: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    calculation_status: Mapped[str] = mapped_column(String(30), nullable=False)
+
+
+class MarketRegimeResult(Base):
+    __tablename__ = "market_regime_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False
+    )
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assets.id"), nullable=True
+    )
+    timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
+    trend_regime: Mapped[str] = mapped_column(String(30), nullable=False)
+    volatility_regime: Mapped[str] = mapped_column(String(30), nullable=False)
+    momentum_regime: Mapped[str] = mapped_column(String(30), nullable=False)
+    confidence_score: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    observation_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class RiskResult(Base):
+    __tablename__ = "risk_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False
+    )
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assets.id"), nullable=True
+    )
+    observation_period: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    volatility: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
+    max_drawdown: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
+    value_at_risk: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    confidence_level: Mapped[float | None] = mapped_column(Numeric(10, 8), nullable=True)
+    risk_classification: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

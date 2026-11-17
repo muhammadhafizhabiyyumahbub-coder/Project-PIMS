@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+/* Design tokens sourced from design-reference/dashboard/dashboard.tsx
+   (Obsidian dark institutional terminal theme). */
+@theme {
+  --color-canvas: #090b0e;
+  --color-card: #101318;
+  --color-recessed: #151921;
+  --color-hover: #1b202b;
+  --color-line: #1f2633;
+  --color-line-strong: #2c3546;
+  --color-ink: #f0f3f8;
+  --color-ink2: #94a0b8;
+  --color-ink3: #636e85;
+  --color-gain: #3fb950;
+  --color-gain-bg: #11261a;
+  --color-gain-line: #1e462d;
+  --color-loss: #f85149;
+  --color-loss-bg: #2a1418;
+  --color-loss-line: #522328;
+  --color-accent: #4f8ff7;
+  --color-accent-bg: #132238;
+  --color-accent-line: #274675;
+  --color-warn: #e59a3c;
+  --color-warn-bg: #2a2012;
+  --color-warn-line: #54391b;
+  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-geist-sans);
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
