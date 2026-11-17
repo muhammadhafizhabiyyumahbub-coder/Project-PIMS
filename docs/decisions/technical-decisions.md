@@ -594,6 +594,19 @@ Implementasi: `backend/app/engines/portfolio/cost_basis.py`.
 
 5. **`AssetPicker` frontend mencari lewat `GET /assets/search` dengan debounce 250 ms, minimal 2 karakter, dan menampilkan simbol + nama + market/exchange + quote currency.** Pencarian gagal/kosong ditampilkan apa adanya (empty/error state), tanpa fallback data palsu.
 
+# 7.8 Cash Integrity & Venue Decisions (Stage E)
+
+**Status:** APPROVED (2026-11-17, Project Owner).
+
+1. **`exchange` = `markets.code` untuk MVP; entitas venue terpisah DITUNDA.**
+   - Venue sebenarnya (BYBIT, IDX, NASDAQ) bila nanti dibutuhkan sebagai field berbeda dari market memerlukan approval arsitektur karena berarti perubahan schema. Jangan membuat tabel venue baru sekarang.
+
+2. **Tidak ada margin di MVP: BUY yang membuat saldo cash negatif DITOLAK (422 `INSUFFICIENT_CASH`), sama seperti WITHDRAWAL.**
+   - Outflow BUY = `quantity * price + fee`, dibandingkan terhadap saldo cash portfolio pada currency transaksi. Batas: `outflow <= balance` lolos (termasuk persis 0 setelah transaksi); kekurangan 1 unit terkecil (1e-12, presisi NUMERIC(30,12)) sudah ditolak.
+   - Penolakan terjadi sebelum penulisan apa pun; transaksi atomik (schema-spec §15.1) — tidak ada baris transactions/cash_ledger/holdings yang tertinggal.
+   - Leverage/margin adalah keputusan fase lanjut dengan Risk Engine.
+   - Batas diketahui (menunggu keputusan owner): SELL dengan fee > proceeds menghasilkan ledger negatif; aturan ini belum mencakup kasus itu karena SELL diasumsikan menambah cash.
+
 # 8. Market Scanner Decisions
 
 ## 8.1 Independent Scanner Engine
