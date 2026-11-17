@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.envelope import error_response, success_response
 from app.core.db import get_db
 from app.database.repositories import portfolio as repo
+from app.engines.allocation.allocation import allocation_for_portfolio, serialize_weight
 from app.engines.portfolio.performance import performance_for_portfolio, serialize_return
 from app.engines.portfolio.service import write_snapshot
 from app.engines.portfolio.valuation import value_portfolio
@@ -333,5 +334,114 @@ def get_performance(
             "cagr_reason": result.cagr_reason,
             "realized_pnl": serialize_money(result.realized_pnl),
             "unrealized_pnl": serialize_money(result.unrealized_pnl),
+        }
+    )
+
+
+@router.get("/{portfolio_id}/allocation")
+def get_allocation(portfolio_id: str, db: Session = Depends(get_db)):
+    """Allocation endpoint (Stage J): actual distribution + concentration.
+
+    Read-only; target weights / rebalancing are not specified and not computed.
+    Weights cover only valued components and are never silently renormalised.
+    """
+    pid = parse_uuid(portfolio_id)
+    if pid is None or repo.get_portfolio(db, pid) is None:
+        return error_response("NOT_FOUND", f"portfolio {portfolio_id} not found", 404)
+
+    try:
+        result = allocation_for_portfolio(db, pid)
+    except ValueError as exc:
+        return error_response("VALIDATION_ERROR", str(exc), 422)
+
+    def slice_payload(slice_) -> dict:
+        return {
+            "name": slice_.name,
+            "market_value": serialize_money(slice_.market_value),
+            "weight": serialize_weight(slice_.weight),
+            "holdings_count": slice_.holdings_count,
+        }
+
+    def asset_payload(p) -> dict:
+        return {
+            "asset_id": str(p.asset_id),
+            "symbol": p.symbol,
+            "name": p.name,
+            "asset_class": p.asset_class,
+            "market": p.market,
+            "currency": p.currency,
+            "quantity": serialize_money(p.quantity),
+            "market_price": serialize_money(p.market_price),
+            "price_status": p.price_status,
+            "price_time": p.price_time.isoformat() if p.price_time else None,
+            "market_value": serialize_money(p.market_value),
+            "weight": serialize_weight(p.weight),
+        }
+
+    sector = result.categories["sector"]
+    cash = result.categories["cash"]
+    return success_response(
+        {
+            "weight_base": result.weight_base,
+            "portfolio_id": str(result.portfolio_id),
+            "reporting_currency": result.reporting_currency,
+            "valuation_timestamp": result.valuation_timestamp.isoformat(),
+            "data_status": result.data_status,
+            "data_status_reason": result.data_status_reason,
+            "total_value": serialize_money(result.total_value),
+            "cash_value": serialize_money(result.cash_value),
+            "invested_value": serialize_money(result.invested_value),
+            "coverage": {
+                "total_components": result.coverage["total_components"],
+                "covered_components": result.coverage["covered_components"],
+                "unvalued_components": result.coverage["unvalued_components"],
+                "coverage_percentage": serialize_weight(result.coverage["coverage_percentage"]),
+                "position_coverage_percentage": serialize_weight(
+                    result.coverage["position_coverage_percentage"]
+                ),
+                "value_known_percentage": serialize_weight(
+                    result.coverage["value_known_percentage"]
+                ),
+            },
+            "unpriced_positions": [
+                {
+                    "asset_id": str(u.asset_id),
+                    "symbol": u.symbol,
+                    "quantity": serialize_money(u.quantity),
+                    "cost_basis": serialize_money(u.cost_basis),
+                }
+                for u in result.unpriced_positions
+            ],
+            "categories": {
+                "asset_class": [slice_payload(s) for s in result.categories["asset_class"]],
+                "market": [slice_payload(s) for s in result.categories["market"]],
+                "sector": {
+                    "status": sector["status"],
+                    "reason": sector["reason"],
+                    "allocation": [slice_payload(s) for s in sector["allocation"]],
+                },
+                "currency": [slice_payload(s) for s in result.categories["currency"]],
+                "individual_asset": [
+                    asset_payload(p) for p in result.categories["individual_asset"]
+                ],
+                "cash": {
+                    "currency": cash["currency"],
+                    "value": serialize_money(cash["value"]),
+                    "weight": serialize_weight(cash["weight"]),
+                },
+            },
+            "concentration": {
+                "largest_holding_symbol": result.concentration["largest_holding_symbol"],
+                "largest_holding_weight": serialize_weight(
+                    result.concentration["largest_holding_weight"]
+                ),
+                "top_3_weight": serialize_weight(result.concentration["top_3_weight"]),
+                "top_5_weight": serialize_weight(result.concentration["top_5_weight"]),
+                "top_10_weight": serialize_weight(result.concentration["top_10_weight"]),
+                "largest_market": result.concentration["largest_market"],
+                "largest_currency": result.concentration["largest_currency"],
+                "largest_sector": result.concentration["largest_sector"],
+                "largest_sector_reason": result.concentration["largest_sector_reason"],
+            },
         }
     )
