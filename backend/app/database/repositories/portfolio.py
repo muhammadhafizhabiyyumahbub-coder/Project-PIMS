@@ -4,7 +4,7 @@ Functions here only read/write rows; they never commit. Transaction boundaries
 belong to the calling service so financial writes stay atomic (schema-spec §15.1).
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -42,6 +42,29 @@ def get_portfolio(session: Session, portfolio_id: uuid.UUID) -> Portfolio | None
     return session.get(Portfolio, portfolio_id)
 
 
+def update_portfolio(session: Session, portfolio: Portfolio, **values) -> Portfolio:
+    for field, value in values.items():
+        if value is not None:
+            setattr(portfolio, field, value)
+    portfolio.updated_at = datetime.now(timezone.utc)
+    session.flush()
+    return portfolio
+
+
+def delete_portfolio(session: Session, portfolio: Portfolio) -> None:
+    session.delete(portfolio)
+    session.flush()
+
+
+def has_transactions(session: Session, portfolio_id: uuid.UUID) -> bool:
+    return (
+        session.query(Transaction.id)
+        .filter(Transaction.portfolio_id == portfolio_id)
+        .first()
+        is not None
+    )
+
+
 def list_portfolios(session: Session) -> list[Portfolio]:
     return list(session.scalars(select(Portfolio).order_by(Portfolio.created_at)))
 
@@ -55,6 +78,34 @@ def find_transaction_by_idempotency_key(
             Transaction.idempotency_key == idempotency_key,
         )
     ).first()
+
+
+def get_transaction(session: Session, transaction_id: uuid.UUID) -> Transaction | None:
+    return session.get(Transaction, transaction_id)
+
+
+def list_transactions_page(
+    session: Session,
+    portfolio_id: uuid.UUID | None = None,
+    transaction_type: str | None = None,
+    limit: int = 50,
+    cursor_transaction: Transaction | None = None,
+) -> tuple[list[Transaction], bool]:
+    """Deterministic (transaction_date, id) ordering; opaque cursor via last row."""
+    query = select(Transaction)
+    if portfolio_id is not None:
+        query = query.where(Transaction.portfolio_id == portfolio_id)
+    if transaction_type is not None:
+        query = query.where(Transaction.transaction_type == transaction_type)
+    if cursor_transaction is not None:
+        query = query.where(
+            (Transaction.transaction_date, Transaction.id)
+            > (cursor_transaction.transaction_date, cursor_transaction.id)
+        )
+    query = query.order_by(Transaction.transaction_date, Transaction.id).limit(limit + 1)
+    rows = list(session.scalars(query))
+    has_more = len(rows) > limit
+    return rows[:limit], has_more
 
 
 def list_transactions(session: Session, portfolio_id: uuid.UUID) -> list[Transaction]:

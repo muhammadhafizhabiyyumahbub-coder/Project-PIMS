@@ -80,6 +80,7 @@ def record_transaction(
     if idempotency_key is not None:
         existing = repo.find_transaction_by_idempotency_key(session, portfolio_id, idempotency_key)
         if existing is not None:
+            _assert_payload_matches(existing, transaction_type, asset_id, quantity, price, fee, gross_amount, currency)
             return existing, False
 
     if transaction_type in ASSET_TYPES:
@@ -117,6 +118,37 @@ def record_transaction(
     _persist_holdings(session, portfolio_id)
     session.commit()
     return transaction, True
+
+
+def _assert_payload_matches(existing, transaction_type, asset_id, quantity, price, fee, gross_amount, currency) -> None:
+    """Duplicate key with a different payload is a client bug, not a replay
+    (api-spec §22: key/payload conflicts must be handled)."""
+    same = (
+        existing.transaction_type == transaction_type
+        and existing.asset_id == asset_id
+        and existing.currency == currency
+        and (existing.quantity is None) == (quantity is None)
+        and (existing.price is None) == (price is None)
+        and (existing.gross_amount is None) == (gross_amount is None)
+        and (
+            existing.quantity is None
+            or Decimal(str(existing.quantity)) == Decimal(str(quantity))
+        )
+        and (
+            existing.price is None
+            or Decimal(str(existing.price)) == Decimal(str(price))
+        )
+        and (
+            existing.gross_amount is None
+            or Decimal(str(existing.gross_amount)) == Decimal(str(gross_amount))
+        )
+        and Decimal(str(existing.fee_amount)) == Decimal(str(fee))
+    )
+    if not same:
+        raise TransactionError(
+            "IDEMPOTENCY_CONFLICT",
+            "idempotency key was already used with a different payload",
+        )
 
 
 def _record_asset_transaction(

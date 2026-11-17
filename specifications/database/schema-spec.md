@@ -1154,7 +1154,7 @@ The following decisions remain open and must not be silently finalized by OpenCo
 | Redis | DEFERRED |
 | Portfolio cost basis methodology | APPROVED — Weighted Average Cost (2026-11-17, Project Owner; technical-decisions.md §7.4). FIFO/Specific-ID deferred |
 | Performance calculation methodology | Requires approval |
-| Fee and dividend treatment | APPROVED for BUY/SELL fees (fee-in-cost-basis for BUY, fee-reduces-proceeds for SELL; portfolio-engine-spec §4.3–§4.4). Dividend treatment still requires approval |
+| Fee and dividend treatment | Fee treatment for BUY/SELL is specified in portfolio-engine-spec §4.3–§4.4 (TotalCost = GrossAmount + Fees; NetProceeds = GrossProceeds - Fees) — no separate decision needed. Dividend treatment still requires approval |
 | Corporate actions schema | DEFERRED |
 | Tax schema | DEFERRED |
 | User authentication schema | Requires approval |

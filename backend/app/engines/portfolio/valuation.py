@@ -119,7 +119,12 @@ def value_portfolio(
         status = "COMPLETE"
 
     has_valued_positions = any(p.market_value is not None for p in positions)
-    invested_q = quantize(invested) if has_valued_positions else None
+    # No positions at all: invested 0 is a true zero (nothing held), not a
+    # placeholder — api-spec §4.3 forbids only substituting UNAVAILABLE data.
+    if not positions:
+        invested_q: Decimal | None = Decimal("0")
+    else:
+        invested_q = quantize(invested) if has_valued_positions else None
     # invested_value sums only AVAILABLE positions; totals are reported only
     # when the valuation is COMPLETE (partial/stale sums must not look final).
     return ValuationResult(
