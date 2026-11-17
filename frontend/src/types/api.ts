@@ -220,6 +220,84 @@ export interface PortfolioPerformance {
   unrealized_pnl: string | null;
 }
 
+// --- Portfolio allocation (allocation-engine-spec, Stage J) -----------------
+// Weights and percentages are already-percentage decimal strings. The client
+// renders them verbatim and never does arithmetic on them.
+
+export interface AllocationSlice {
+  name: string;
+  market_value: string | null;
+  weight: string | null;
+  holdings_count: number;
+}
+
+export interface AllocationIndividualAsset {
+  asset_id: string;
+  symbol: string;
+  name: string | null;
+  asset_class: string;
+  market: string;
+  currency: string;
+  quantity: string | null;
+  market_price: string | null;
+  price_status: string;
+  price_time: string | null;
+  market_value: string | null;
+  weight: string | null;
+}
+
+/** A holding with no price. cost_basis is a proxy, not a market value. */
+export interface UnpricedPosition {
+  asset_id: string;
+  symbol: string;
+  quantity: string | null;
+  cost_basis: string | null;
+}
+
+export interface AllocationCoverage {
+  total_components: number;
+  covered_components: number;
+  unvalued_components: number;
+  coverage_percentage: string | null;
+  position_coverage_percentage: string | null;
+  value_known_percentage: string | null;
+}
+
+export interface AllocationConcentration {
+  largest_holding_symbol: string | null;
+  largest_holding_weight: string | null;
+  top_3_weight: string | null;
+  top_5_weight: string | null;
+  top_10_weight: string | null;
+  largest_market: string | null;
+  largest_currency: string | null;
+  largest_sector: string | null;
+  largest_sector_reason: string | null;
+}
+
+export interface PortfolioAllocation {
+  weight_base: string;
+  portfolio_id: string;
+  reporting_currency: string;
+  valuation_timestamp: string;
+  data_status: string;
+  data_status_reason: string | null;
+  total_value: string | null;
+  cash_value: string | null;
+  invested_value: string | null;
+  coverage: AllocationCoverage;
+  unpriced_positions: UnpricedPosition[];
+  categories: {
+    asset_class: AllocationSlice[];
+    market: AllocationSlice[];
+    sector: { status: string; reason: string | null; allocation: AllocationSlice[] };
+    currency: AllocationSlice[];
+    individual_asset: AllocationIndividualAsset[];
+    cash: { currency: string; value: string | null; weight: string | null };
+  };
+  concentration: AllocationConcentration;
+}
+
 // --- Asset summary (api-spec §11) -------------------------------------------
 // id and symbol are internal identity; provider symbols are never surfaced here.
 

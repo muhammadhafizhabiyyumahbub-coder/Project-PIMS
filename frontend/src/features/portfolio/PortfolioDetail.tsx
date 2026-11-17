@@ -9,6 +9,7 @@ import { ApiRequestError, createSnapshot, createTransaction, getHoldings, getPor
 import type { AssetSummary, Holding, Portfolio, PortfolioSnapshot, Transaction, Valuation } from "@/types/api";
 import AssetPicker from "./AssetPicker";
 import PerformancePanel from "./PerformancePanel";
+import AllocationPanel from "./AllocationPanel";
 
 const TRANSACTION_TYPES = ["DEPOSIT", "WITHDRAWAL", "BUY", "SELL"] as const;
 const ASSET_TYPES: readonly string[] = ["BUY", "SELL"];
@@ -103,6 +104,7 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
       </header>
 
       <ValuationSummary valuation={valuation} />
+      <AllocationPanel portfolioId={portfolioId} />
       <PerformancePanel portfolioId={portfolioId} />
       <SnapshotHistory portfolioId={portfolioId} />
       <HoldingsTable holdings={holdings} statusReason={STATUS_REASONS[valuation.valuation_status]} />

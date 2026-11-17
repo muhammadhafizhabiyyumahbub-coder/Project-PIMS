@@ -163,6 +163,9 @@ def test_one_unpriced_asset_coverage_below_100_and_weight_null():
     assert unpriced[0].asset_id == aid_b
     assert unpriced[0].quantity == D("1")
     assert unpriced[0].cost_basis == D("100")
+    # The top-level field is what the endpoint serializes; it must be populated too.
+    assert len(res.unpriced_positions) == 1
+    assert res.unpriced_positions[0].symbol == "B"
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +306,8 @@ def test_allocation_endpoint_hand_computed(client, db_session, portfolio_id, see
     assert data["cash_value"] == "798"
     assert data["invested_value"] == "210"
     assert data["coverage"]["coverage_percentage"] == "100.0000000000"
+    # Endpoint serializes the top-level unpriced list (empty when all priced).
+    assert data["unpriced_positions"] == []
 
     assets_by_symbol = {a["symbol"]: a for a in data["categories"]["individual_asset"]}
     assert assets_by_symbol["BTCUSDT"]["market_value"] == "210"
@@ -330,3 +335,32 @@ def test_allocation_endpoint_hand_computed(client, db_session, portfolio_id, see
     assert not re.search(r'":\s*-?\d+\.\d+', raw), raw
     assert all(isinstance(v, str) or v is None for row in assets_by_symbol.values() for v in row.values())
     assert data["categories"]["individual_asset"][0]["weight"] == "20.8333333333"
+
+
+def test_allocation_endpoint_lists_unpriced_positions(client, db_session, portfolio_id, seeded_universe):
+    # BUY priced BTCUSDT and unpriced SOLUSDT (no candle stored for it).
+    btc = seeded_universe["assets"]["BTCUSDT"]
+    sol = seeded_universe["assets"]["SOLUSDT"]
+    assert deposit(client, portfolio_id, "1000.00").status_code == 201
+    assert trade(client, portfolio_id, "BUY", str(btc.id), "2", "100.00", "0").status_code == 201
+    assert trade(client, portfolio_id, "BUY", str(sol.id), "5", "20.00", "0").status_code == 201
+    provider = seeded_universe["providers"][1]  # YAHOO
+    store_candle(db_session, btc.id, provider.id, D("105"), datetime.now(UTC) - timedelta(hours=1))
+
+    response = client.get(f"/api/v1/portfolios/{portfolio_id}/allocation")
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+
+    # One priced holding, one unpriced -> the list must surface it for audit.
+    assert data["coverage"]["unvalued_components"] == 1
+    assert len(data["unpriced_positions"]) == 1
+    unpriced = data["unpriced_positions"][0]
+    assert unpriced["symbol"] == "SOLUSDT"
+    assert unpriced["quantity"] == "5"
+    assert unpriced["cost_basis"] == "100"  # 5 @ 20, cost basis is a proxy not a market value
+    assert set(unpriced.keys()) == {"asset_id", "symbol", "quantity", "cost_basis"}
+
+    # Two honest coverage measures, kept distinct and never merged.
+    assert data["coverage"]["position_coverage_percentage"] == "50.0000000000"
+    assert data["coverage"]["value_known_percentage"] == "67.7419354839"  # 210 / (210 + 100) * 100
+    assert data["weight_base"] == "priced_components_incl_cash"

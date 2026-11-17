@@ -8,6 +8,7 @@ import type {
   Holding,
   Opportunity,
   Portfolio,
+  PortfolioAllocation,
   PortfolioPerformance,
   PortfolioSnapshot,
   ResearchJob,
@@ -212,6 +213,12 @@ export function getPerformance(
   const suffix = query.toString();
   return request<PortfolioPerformance>(
     `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/performance${suffix ? `?${suffix}` : ""}`,
+  );
+}
+
+export function getAllocation(portfolioId: string): Promise<Envelope<PortfolioAllocation>> {
+  return request<PortfolioAllocation>(
+    `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/allocation`,
   );
 }
 

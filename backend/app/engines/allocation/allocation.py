@@ -325,6 +325,7 @@ def compute_allocation(data: AllocationInput) -> AllocationResult:
         cash_value=data.cash_value,
         invested_value=invested,
         coverage=coverage,
+        unpriced_positions=unpriced_positions,
         categories={
             "asset_class": class_slices,
             "market": market_slices,
