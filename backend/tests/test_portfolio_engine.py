@@ -298,13 +298,14 @@ def test_mid_write_failure_leaves_nothing(db_session, portfolio, seeded_universe
     def explode(*args, **kwargs):
         raise RuntimeError("simulated ledger failure")
 
+    record_transaction(db_session, pid, "DEPOSIT", gross_amount=D("1000"))
     monkeypatch.setattr(repo_mod, "add_ledger_entry", explode)
     with pytest.raises(RuntimeError):
         record_transaction(db_session, pid, "BUY", asset_id=asset.id, quantity=D("1"), price=D("10"))
     db_session.rollback()
-    # Atomic: neither the transaction row nor any ledger row survived.
-    assert len(repo.list_transactions(db_session, pid)) == 0
-    assert len(repo.ledger_entries(db_session, pid)) == 0
+    # Atomic: the BUY left nothing behind; only the prior DEPOSIT remains.
+    assert len(repo.list_transactions(db_session, pid)) == 1
+    assert len(repo.ledger_entries(db_session, pid)) == 1
 
 
 # ---------------------------------------------------------------------------

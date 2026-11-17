@@ -138,6 +138,7 @@ def test_money_fields_are_numeric_strings(client, db_session, portfolio_id, seed
     """api-spec §5.3: money must not leave the API as JSON floats."""
     asset = seeded_universe["assets"]["BTCUSDT"]
     pid = portfolio_id
+    deposit(client, pid, "1000.00")
     r = trade(client, pid, "BUY", str(asset.id), "0.5", "100.123456789012", "0.5")
     assert r.status_code == 201
     body = r.json()["data"]

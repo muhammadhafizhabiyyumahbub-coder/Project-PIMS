@@ -185,6 +185,19 @@ def _record_asset_transaction(
                 f"SELL {quantity_d} exceeds available holdings {available} (shorting unsupported)",
             )
 
+    if transaction_type == "BUY":
+        # Owner decision §7.8 (2026-11-17): no margin in MVP. BUY outflow is
+        # qty*price + fee; must not exceed cash balance. Computed on quantized
+        # amounts so the check matches the ledger entries exactly (boundary
+        # equality passes, one smallest unit short is rejected).
+        balance = Decimal(str(repo.cash_balance(session, portfolio.id, currency)))
+        outflow = quantize(gross) + quantize(fee)
+        if outflow > balance:
+            raise TransactionError(
+                "INSUFFICIENT_CASH",
+                f"BUY outflow {outflow} exceeds available cash {balance} (no margin in MVP)",
+            )
+
     transaction = repo.add_transaction(
         session,
         portfolio_id=portfolio.id,
@@ -238,8 +251,8 @@ def _record_cash_transaction(
         raise TransactionError("NON_POSITIVE_AMOUNT", "gross_amount must be positive")
 
     if transaction_type in CASH_OUTFLOW:
-        balance = Decimal(str(repo.cash_balance(session, portfolio.id, currency)))
-        outflow = amount + fee
+        balance = quantize(Decimal(str(repo.cash_balance(session, portfolio.id, currency))))
+        outflow = quantize(amount + fee)
         if outflow > balance:
             raise TransactionError(
                 "INSUFFICIENT_CASH",
