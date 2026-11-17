@@ -654,6 +654,19 @@ Implementasi: `backend/app/engines/portfolio/cost_basis.py`.
 
 7. **Endpoint read-only `GET /portfolios/{id}/performance?start=&end=`** dengan envelope standar. Tidak ada persistence ke tabel analytics (persistence ronde terpisah).
 
+# 7.11 Risk Engine Decisions (Stage L)
+
+**Status:** APPROVED (2026-11-17, Project Owner).
+
+1. **Return series**: daily portfolio return approximated from daily candles of held assets using current holding weights (`method: "current_weights_buy_and_hold_approximation"`). Label di response agar tidak disamakan dengan return aktual historis.
+2. **Metrik ronde ini**: daily volatility, annualized volatility, max drawdown, Sharpe, Sortino, VaR & CVaR historical simulation (empirical quantile, holding period 1 hari, confidence 95% dan 99%).
+3. **Risk-free rate = 0 untuk MVP**, dikirim eksplisit di response (`risk_free_rate: "0"`), bukan asumsi tersembunyi.
+4. **Beta dan benchmark ditunda** (belum ada sumber data benchmark). Tidak diimplementasikan.
+5. **Annualisasi**: 365 jika semua aset held CRYPTO (`crypto_calendar_365`), 252 jika semua non-CRYPTO (`trading_calendar_252`), 252 dengan label `mixed_calendar_252` jika campuran. Label di response agar auditable.
+6. **Data tidak cukup** (< 30 return harian di window) → `UNAVAILABLE` + alasan. Aset tanpa candle → `UNAVAILABLE`, tidak boleh substitusi 0.
+7. **Semua perhitungan Decimal**, tidak ada float; output sebagai decimal string skala 12 desimal.
+8. **Endpoint read-only `GET /portfolios/{id}/risk?window=`** (default 90 hari), envelope standar. Tidak ada persistence ke `analytics_runs`/`risk_results` ronde ini.
+
 # 8. Market Scanner Decisions
 
 ## 8.1 Independent Scanner Engine

@@ -17,6 +17,7 @@ from app.engines.allocation.allocation import allocation_for_portfolio, serializ
 from app.engines.portfolio.performance import performance_for_portfolio, serialize_return
 from app.engines.portfolio.service import write_snapshot
 from app.engines.portfolio.valuation import value_portfolio
+from app.engines.risk.portfolio_risk import risk_for_portfolio
 from app.schemas.portfolio import PortfolioCreate, PortfolioUpdate, serialize_money
 
 router = APIRouter(prefix="/portfolios", tags=["Portfolios"])
@@ -443,5 +444,53 @@ def get_allocation(portfolio_id: str, db: Session = Depends(get_db)):
                 "largest_sector": result.concentration["largest_sector"],
                 "largest_sector_reason": result.concentration["largest_sector_reason"],
             },
+        }
+    )
+
+
+@router.get("/{portfolio_id}/risk")
+def get_risk(portfolio_id: str, window: int = 90, db: Session = Depends(get_db)):
+    """Risk endpoint (Stage L): daily volatility, drawdown, Sharpe, Sortino, VaR/CVaR."""
+    if window < 30 or window > 3650:
+        return error_response("VALIDATION_ERROR", "window must be between 30 and 3650", 422)
+
+    pid = parse_uuid(portfolio_id)
+    if pid is None or repo.get_portfolio(db, pid) is None:
+        return error_response("NOT_FOUND", f"portfolio {portfolio_id} not found", 404)
+
+    result = risk_for_portfolio(db, pid, window)
+
+    return success_response(
+        {
+            "portfolio_id": str(result.portfolio_id),
+            "reporting_currency": result.reporting_currency,
+            "window_days": result.window_days,
+            "observation_start": (
+                result.observation_start.isoformat() if result.observation_start else None
+            ),
+            "observation_end": (
+                result.observation_end.isoformat() if result.observation_end else None
+            ),
+            "return_count": result.return_count,
+            "method": result.method,
+            "weight_base": result.weight_base,
+            "annualization": result.annualization,
+            "annualization_factor": result.annualization_factor,
+            "risk_free_rate": serialize_return(result.risk_free_rate),
+            "data_status": result.data_status,
+            "data_status_reason": result.data_status_reason,
+            "price_source": result.price_source,
+            "metrics": {key: serialize_return(value) for key, value in result.metrics.items()},
+            "metric_reasons": result.metric_reasons,
+            "holdings": [
+                {
+                    "asset_id": str(h.asset_id),
+                    "symbol": h.symbol,
+                    # Internal weight is a 0..1 fraction; the payload reports
+                    # percentages like the allocation endpoint does.
+                    "weight": serialize_weight(h.weight * 100 if h.weight is not None else None),
+                }
+                for h in result.holdings
+            ],
         }
     )
