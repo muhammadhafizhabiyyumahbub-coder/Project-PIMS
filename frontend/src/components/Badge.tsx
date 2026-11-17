@@ -18,6 +18,7 @@ const TONES: Record<string, string> = {
   RUNNING: "bg-accent-bg text-accent border-accent-line",
   // Absent data — always muted, never colored as good or bad
   "NOT AVAILABLE": "bg-recessed text-ink3 border-line",
+  UNAVAILABLE: "bg-recessed text-ink3 border-line",
   PENDING: "bg-recessed text-ink2 border-line",
   WAITING_FOR_ENGINES: "bg-recessed text-ink2 border-line",
   READY_FOR_AI: "bg-recessed text-ink2 border-line",

@@ -8,9 +8,11 @@ import type {
   Holding,
   Opportunity,
   Portfolio,
+  PortfolioSnapshot,
   ResearchJob,
   ResearchReport,
   ScannerRunSummary,
+  SnapshotCreated,
   Transaction,
   Valuation,
 } from "@/types/api";
@@ -176,6 +178,26 @@ export function createTransaction(body: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+export function createSnapshot(
+  portfolioId: string,
+  idempotencyKey?: string,
+): Promise<Envelope<SnapshotCreated>> {
+  return request<SnapshotCreated>(`/api/v1/portfolios/${encodeURIComponent(portfolioId)}/snapshots`, {
+    method: "POST",
+    headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
+  });
+}
+
+export function listSnapshots(
+  portfolioId: string,
+  cursor?: string,
+): Promise<Envelope<PortfolioSnapshot[]>> {
+  const suffix = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+  return request<PortfolioSnapshot[]>(
+    `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/snapshots?limit=50${suffix}`,
+  );
 }
 
 export type { Candle, CandlesResponse, Opportunity, ResearchJob, ResearchReport, ScannerRunSummary };

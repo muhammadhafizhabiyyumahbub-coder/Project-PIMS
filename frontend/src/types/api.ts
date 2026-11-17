@@ -164,6 +164,39 @@ export interface Valuation {
   positions: ValuationPosition[];
 }
 
+// --- Portfolio snapshots (technical-decisions §7.9) -------------------------
+// Values the valuation could not produce are null; never treated as zero.
+
+export interface SnapshotPosition {
+  asset_id: string;
+  symbol: string;
+  quantity: string | null;
+  market_price: string | null;
+  market_value: string | null;
+  price_status: string;
+}
+
+export interface PortfolioSnapshot {
+  id: string;
+  portfolio_id: string;
+  snapshot_at: string;
+  total_value: string | null;
+  cash_value: string | null;
+  invested_value: string | null;
+  reporting_currency: string;
+  valuation_status: string;
+  status_reason: string | null;
+  realized_pnl: string | null;
+  unrealized_pnl: string | null;
+  positions: SnapshotPosition[];
+  created_at: string;
+}
+
+export interface SnapshotCreated extends PortfolioSnapshot {
+  /** True when the backend returned an existing row for the same idempotency key. */
+  idempotent_replay: boolean;
+}
+
 // --- Asset summary (api-spec §11) -------------------------------------------
 // id and symbol are internal identity; provider symbols are never surfaced here.
 

@@ -208,6 +208,8 @@ def _snapshot_payload(snapshot) -> dict:
         "reporting_currency": snapshot.reporting_currency,
         "valuation_status": snapshot.valuation_status,
         "status_reason": metadata.get("status_reason"),
+        "realized_pnl": metadata.get("realized_pnl"),
+        "unrealized_pnl": metadata.get("unrealized_pnl"),
         "positions": metadata.get("positions", []),
         "created_at": snapshot.created_at.isoformat(),
     }

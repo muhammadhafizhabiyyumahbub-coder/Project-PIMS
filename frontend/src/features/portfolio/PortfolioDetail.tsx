@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/Badge";
 import { formatMoneyString, formatSignedMoneyString, formatUtc, pnlTone } from "@/lib/format";
-import { ApiRequestError, createTransaction, getHoldings, getPortfolio, getValuation, listTransactions } from "@/services/api";
-import type { AssetSummary, Holding, Portfolio, Transaction, Valuation } from "@/types/api";
+import { ApiRequestError, createSnapshot, createTransaction, getHoldings, getPortfolio, getValuation, listSnapshots, listTransactions } from "@/services/api";
+import type { AssetSummary, Holding, Portfolio, PortfolioSnapshot, Transaction, Valuation } from "@/types/api";
 import AssetPicker from "./AssetPicker";
 
 const TRANSACTION_TYPES = ["DEPOSIT", "WITHDRAWAL", "BUY", "SELL"] as const;
@@ -102,6 +102,7 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
       </header>
 
       <ValuationSummary valuation={valuation} />
+      <SnapshotHistory portfolioId={portfolioId} />
       <HoldingsTable holdings={holdings} statusReason={STATUS_REASONS[valuation.valuation_status]} />
       <TransactionForm portfolioId={portfolioId} currency={portfolio.base_currency} onRecorded={() => setReloadKey((k) => k + 1)} />
       <TransactionsTable transactions={transactions} />
@@ -189,6 +190,199 @@ function HoldingsTable({ holdings, statusReason }: { holdings: Holding[]; status
       )}
       {holdings.length > 0 && (
         <p className="px-4 py-2 text-[10px] text-ink3">{statusReason}</p>
+      )}
+    </section>
+  );
+}
+
+function SnapshotHistory({ portfolioId }: { portfolioId: string }) {
+  const [snapshots, setSnapshots] = useState<PortfolioSnapshot[] | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [taking, setTaking] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  // Key for the capture attempt in progress. Two triggers that race (before the
+  // first resolves) send the same key, so the backend replays instead of writing
+  // two rows. Rotated after success, so a later capture is a new snapshot
+  // (technical-decisions §7.9). No unique index backs this: it is best-effort.
+  const pendingKey = useRef<string | null>(null);
+
+  // Same shape as the parent loader: fetch in the effect, state set in the
+  // callback, reloadKey re-runs it after a new snapshot is captured.
+  useEffect(() => {
+    let cancelled = false;
+    listSnapshots(portfolioId)
+      .then((response) => {
+        if (cancelled) return;
+        setSnapshots(response.data);
+        setHasMore(Boolean((response.meta?.pagination as { has_more?: boolean } | undefined)?.has_more));
+        setListError(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setSnapshots([]);
+        setHasMore(false);
+        setListError(error instanceof ApiRequestError ? error.message : "Could not load snapshots.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [portfolioId, reloadKey]);
+
+  const loadMore = useCallback(async () => {
+    if (snapshots === null || snapshots.length === 0) return;
+    setLoadingMore(true);
+    try {
+      const response = await listSnapshots(portfolioId, snapshots[snapshots.length - 1].id);
+      setSnapshots([...snapshots, ...response.data]);
+      setHasMore(Boolean((response.meta?.pagination as { has_more?: boolean } | undefined)?.has_more));
+      setListError(null);
+    } catch (error) {
+      setListError(error instanceof ApiRequestError ? error.message : "Could not load more snapshots.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [portfolioId, snapshots]);
+
+  const takeSnapshot = useCallback(async () => {
+    setTaking(true);
+    setNotice(null);
+    setCaptureError(null);
+    try {
+      // Reuse the in-progress key so a double trigger replays instead of writing
+      // two rows; rotate after success so a later capture is genuinely new.
+      const key = pendingKey.current ?? crypto.randomUUID();
+      pendingKey.current = key;
+      const response = await createSnapshot(portfolioId, key);
+      pendingKey.current = null;
+      const snapshot = response.data;
+      setNotice(
+        snapshot.idempotent_replay
+          ? `Snapshot ${formatUtc(snapshot.snapshot_at)} already exists, nothing was duplicated.`
+          : `Snapshot ${formatUtc(snapshot.snapshot_at)} captured (${snapshot.valuation_status}).`,
+      );
+      setReloadKey((k) => k + 1);
+    } catch (error) {
+      pendingKey.current = null;
+      setCaptureError(
+        error instanceof ApiRequestError ? error.message : "Could not take a snapshot.",
+      );
+    } finally {
+      setTaking(false);
+    }
+  }, [portfolioId]);
+
+  return (
+    <section aria-label="Snapshot history" className="bg-card border border-line rounded-lg">
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-line">
+        <div>
+          <h2 className="text-[15px] font-semibold">Riwayat Snapshot</h2>
+          <p className="text-[11px] text-ink3">
+            Snapshots are written only when you ask for one. No scheduled snapshots yet.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={takeSnapshot}
+          disabled={taking}
+          className="bg-accent-bg text-accent border border-accent-line rounded px-3 py-1.5 text-[12px] font-medium hover:bg-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-accent"
+        >
+          {taking ? "Mengambil..." : "Ambil snapshot"}
+        </button>
+      </header>
+      {notice && (
+        <p role="status" className="px-4 py-2 text-[11px] text-gain border-b border-line">
+          {notice}
+        </p>
+      )}
+      {captureError && (
+        <p role="alert" className="px-4 py-2 text-[11px] text-loss border-b border-line">
+          {captureError}
+        </p>
+      )}
+      {listError && (
+        <div role="alert" className="px-4 py-3 text-[12px] text-loss">
+          {listError.split(".")[0] === "Cannot reach the PIMS backend." ? (
+            "Backend is not reachable. Open portfolios once the backend is running on port 8000."
+          ) : (
+            listError
+          )}
+          <button type="button" onClick={() => setReloadKey((k) => k + 1)} className="ml-2 underline underline-offset-2">
+            Retry
+          </button>
+        </div>
+      )}
+      {snapshots === null ? (
+        <p aria-live="polite" className="px-4 py-8 text-center text-[12px] text-ink3">
+          Loading snapshots...
+        </p>
+      ) : snapshots.length === 0 ? (
+        <p className="px-4 py-8 text-center text-[12px] text-ink2">
+          No snapshots yet. &quot;Ambil snapshot&quot; stores the current valuation.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-left text-[10px] text-ink3 border-b border-line">
+                <th className="px-4 py-2 font-medium">Waktu</th>
+                <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium text-right">Cash</th>
+                <th className="px-4 py-2 font-medium text-right">Invested</th>
+                <th className="px-4 py-2 font-medium text-right">Total</th>
+                <th className="px-4 py-2 font-medium text-right">Realized</th>
+                <th className="px-4 py-2 font-medium text-right">Unrealized</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshots.map((snapshot) => (
+                <tr key={snapshot.id} className="border-b border-line last:border-b-0">
+                  <td className="px-4 py-2 text-[11px] text-ink2 whitespace-nowrap">
+                    {formatUtc(snapshot.snapshot_at)}
+                  </td>
+                  <td className="px-4 py-2">
+                    <Badge label={snapshot.valuation_status} />
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono tabular-nums">
+                    <Money value={snapshot.cash_value} />
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono tabular-nums">
+                    <Money value={snapshot.invested_value} />
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono tabular-nums">
+                    <Money value={snapshot.total_value} />
+                  </td>
+                  <td className={`px-4 py-2 text-right font-mono tabular-nums ${pnlTone(snapshot.realized_pnl)}`}>
+                    <Pnl value={snapshot.realized_pnl} />
+                  </td>
+                  <td className={`px-4 py-2 text-right font-mono tabular-nums ${pnlTone(snapshot.unrealized_pnl)}`}>
+                    <Pnl value={snapshot.unrealized_pnl} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {snapshots !== null && snapshots.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-t border-line">
+          <p className="text-[10px] text-ink3">
+            Currency {snapshots[0].reporting_currency}. Values the valuation could not produce are shown as unavailable, never as zero.
+          </p>
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+              className="border border-line rounded px-3 py-1 text-[11px] text-ink2 hover:bg-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-accent"
+            >
+              {loadingMore ? "Memuat..." : "Muat lagi"}
+            </button>
+          )}
+        </div>
       )}
     </section>
   );
