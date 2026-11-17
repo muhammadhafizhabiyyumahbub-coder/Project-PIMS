@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from app.api.rest import dashboard, health, market_data, portfolios, research, scanner, transactions
+from app.api.rest import assets, dashboard, health, market_data, portfolios, research, scanner, transactions
 from app.api.websocket.channels import router as ws_router
 from app.config.settings import get_settings
 from app.core.logging import configure_logging
@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(research.router, prefix="/api/v1")
     app.include_router(portfolios.router, prefix="/api/v1")
     app.include_router(transactions.router, prefix="/api/v1")
+    app.include_router(assets.router, prefix="/api/v1")
     app.include_router(ws_router)
     return app
 

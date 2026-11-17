@@ -1,6 +1,7 @@
 "Centralized REST client. Unwraps the {data, meta} envelope; throws ApiRequestError on error envelopes.";
 
 import type {
+  AssetSummary,
   Candle,
   CandlesResponse,
   Envelope,
@@ -104,6 +105,10 @@ export function requestResearch(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ symbol, timeframe }),
   });
+}
+
+export function searchAssets(query: string, limit = 8): Promise<Envelope<AssetSummary[]>> {
+  return request<AssetSummary[]>(`/api/v1/assets/search?query=${encodeURIComponent(query)}&limit=${limit}`);
 }
 
 export function getResearchReport(reportId: string): Promise<Envelope<ResearchReport>> {

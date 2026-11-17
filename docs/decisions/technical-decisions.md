@@ -577,6 +577,23 @@ Implementasi: `backend/app/engines/portfolio/cost_basis.py`.
 7. **Withdrawal melebihi saldo cash → 422 `BUSINESS_RULE_ERROR` (`INSUFFICIENT_CASH`).**
    - Alasan: aturan MVP — tidak ada overdraft. Ini aturan MVP, bukan aturan abadi; revisi menunggu keputusan credit/margin di Phase lanjutan.
 
+# 7.7 Asset API & AssetPicker Decisions (Stage D)
+
+**Status:** APPROVED (2026-11-17, Project Owner) — item 1–2 dikoreksi langsung oleh Project Owner dari draft implementasi.
+
+1. **`exchange` pada response asset = `markets.code` via `assets.market_id`; `null` hanya bila `assets.market_id` memang null.**
+   - Koreksi atas draft awal yang selalu mengirim `null`. Schema sudah memuat relasi `assets.market_id -> markets.id`, jadi kode market adalah sumber data yang sah untuk field exchange (api-spec §11.3).
+   - Catatan semantik: `market` dan `exchange` saat ini mengirim nilai yang sama (`markets.code`) karena belum ada entitas venue terpisah di schema (schema-spec §4.2 hanya mendefinisikan markets). `data_providers` adalah penyedia data, bukan venue, jadi tidak dipakai sebagai exchange. Bila venue sebenarnya (BYBIT, IDX, NASDAQ) dibutuhkan sebagai field terpisah, itu berarti perubahan schema dan menunggu keputusan baru.
+
+2. **Filter `exchange` pada `GET /assets` dan `GET /assets/search` = filter `markets.code`; nilai yang tidak cocok mengembalikan daftar kosong (HTTP 200), bukan error.**
+   - Koreksi atas draft awal yang menolak filter dengan 422. Filter yang tidak dikenal diperlakukan sama seperti filter lain yang tidak match: hasil kosong.
+
+3. **Asset identity tetap internal (`assets.symbol` + `assets.id`); provider symbol mapping (Bybit `BTCUSDT`, Yahoo `BTC-USD`) tetap internal di `provider_instruments` dan tidak pernah tampil di Asset API.** (schema-spec §4.1)
+
+4. **`/assets/search` dideklarasikan sebelum `/assets/{asset_id}` supaya literal `search` tidak tertangkap sebagai id; dibuktikan dengan test `test_route_order_search_is_not_an_id`.**
+
+5. **`AssetPicker` frontend mencari lewat `GET /assets/search` dengan debounce 250 ms, minimal 2 karakter, dan menampilkan simbol + nama + market/exchange + quote currency.** Pencarian gagal/kosong ditampilkan apa adanya (empty/error state), tanpa fallback data palsu.
+
 # 8. Market Scanner Decisions
 
 ## 8.1 Independent Scanner Engine

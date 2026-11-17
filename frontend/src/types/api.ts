@@ -163,3 +163,17 @@ export interface Valuation {
   valued_at: string;
   positions: ValuationPosition[];
 }
+
+// --- Asset summary (api-spec §11) -------------------------------------------
+// id and symbol are internal identity; provider symbols are never surfaced here.
+
+export interface AssetSummary {
+  id: string;
+  symbol: string;
+  name: string;
+  market: string | null;
+  exchange: string | null;
+  quote_currency: string | null;
+  asset_type: string;
+  base_currency: string | null;
+}

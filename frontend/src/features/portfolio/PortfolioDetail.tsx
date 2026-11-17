@@ -5,15 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/components/Badge";
 import { formatMoneyString, formatSignedMoneyString, formatUtc, pnlTone } from "@/lib/format";
-import {
-  ApiRequestError,
-  createTransaction,
-  getHoldings,
-  getPortfolio,
-  getValuation,
-  listTransactions,
-} from "@/services/api";
-import type { Holding, Portfolio, Transaction, Valuation } from "@/types/api";
+import { ApiRequestError, createTransaction, getHoldings, getPortfolio, getValuation, listTransactions } from "@/services/api";
+import type { AssetSummary, Holding, Portfolio, Transaction, Valuation } from "@/types/api";
+import AssetPicker from "./AssetPicker";
 
 const TRANSACTION_TYPES = ["DEPOSIT", "WITHDRAWAL", "BUY", "SELL"] as const;
 const ASSET_TYPES: readonly string[] = ["BUY", "SELL"];
@@ -62,8 +56,6 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
     };
   }, [portfolioId, reloadKey]);
 
-  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
-
   if (loading) {
     return (
       <div className="bg-card border border-line rounded-lg px-4 py-10 text-center text-[12px] text-ink3" aria-live="polite">
@@ -76,7 +68,7 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
     return (
       <div role="alert" className="bg-card border border-loss-line bg-loss-bg rounded-lg px-4 py-6 text-[12px] text-loss">
         {loadError}
-        <button type="button" onClick={reload} className="ml-2 underline underline-offset-2">
+        <button type="button" onClick={() => setReloadKey((k) => k + 1)} className="ml-2 underline underline-offset-2">
           Retry
         </button>
       </div>
@@ -111,7 +103,7 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
 
       <ValuationSummary valuation={valuation} />
       <HoldingsTable holdings={holdings} statusReason={STATUS_REASONS[valuation.valuation_status]} />
-      <TransactionForm portfolioId={portfolioId} currency={portfolio.base_currency} onRecorded={reload} />
+      <TransactionForm portfolioId={portfolioId} currency={portfolio.base_currency} onRecorded={() => setReloadKey((k) => k + 1)} />
       <TransactionsTable transactions={transactions} />
     </div>
   );
@@ -135,10 +127,7 @@ function ValuationSummary({ valuation }: { valuation: Valuation }) {
         <Metric label="Cash" value={<Money value={valuation.cash_value} />} />
         <Metric label="Invested" value={<Money value={valuation.invested_value} />} />
         <Metric label="Total value" value={<Money value={valuation.total_value} />} />
-        <Metric
-          label="Realized P&L"
-          value={<Pnl value={valuation.realized_pnl} />}
-        />
+        <Metric label="Realized P&L" value={<Pnl value={valuation.realized_pnl} />} />
         <Metric label="Unrealized P&L" value={<Pnl value={valuation.unrealized_pnl} />} />
       </dl>
       <p className="px-4 pb-3 text-[10px] text-ink3">
@@ -260,7 +249,7 @@ function TransactionForm({
   onRecorded: () => void;
 }) {
   const [type, setType] = useState<string>("DEPOSIT");
-  const [assetId, setAssetId] = useState("");
+  const [asset, setAsset] = useState<AssetSummary | null>(null);
   const [quantity, setQuantity] = useState("");
   const [price, setPrice] = useState("");
   const [grossAmount, setGrossAmount] = useState("");
@@ -269,10 +258,15 @@ function TransactionForm({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isAssetType = ASSET_TYPES.includes(type);
+  const hasAsset = asset !== null;
 
   const submit = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
+      if (isAssetType && !hasAsset) {
+        setError("Pilih aset terlebih dahulu.");
+        return;
+      }
       setSubmitting(true);
       setError(null);
       setMessage(null);
@@ -281,12 +275,12 @@ function TransactionForm({
           portfolio_id: portfolioId,
           transaction_type: type,
           ...(isAssetType
-            ? { asset_id: assetId, quantity, price }
+            ? { asset_id: asset!.id, quantity, price }
             : { gross_amount: grossAmount }),
           ...(fee !== "" ? { fee } : {}),
         });
         setMessage(`${type} recorded.`);
-        setAssetId("");
+        setAsset(null);
         setQuantity("");
         setPrice("");
         setGrossAmount("");
@@ -300,7 +294,7 @@ function TransactionForm({
         setSubmitting(false);
       }
     },
-    [portfolioId, type, isAssetType, assetId, quantity, price, grossAmount, fee, onRecorded],
+    [portfolioId, type, isAssetType, hasAsset, asset, quantity, price, grossAmount, fee, onRecorded],
   );
 
   return (
@@ -326,17 +320,14 @@ function TransactionForm({
           </select>
         </label>
         {isAssetType && (
+          <AssetPicker
+            value={asset}
+            onChange={setAsset}
+            disabled={submitting}
+          />
+        )}
+        {isAssetType && (
           <>
-            <label className="flex flex-col gap-1 text-[11px] text-ink2">
-              Asset ID
-              <input
-                required
-                value={assetId}
-                onChange={(event) => setAssetId(event.target.value)}
-                placeholder="asset UUID"
-                className="bg-recessed border border-line rounded px-2 py-1.5 text-[12px] text-ink font-mono w-[300px] focus-visible:outline focus-visible:outline-accent"
-              />
-            </label>
             <label className="flex flex-col gap-1 text-[11px] text-ink2">
               Quantity
               <input
@@ -382,7 +373,7 @@ function TransactionForm({
         </label>
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || (isAssetType && !hasAsset)}
           className="bg-accent-bg text-accent border border-accent-line rounded px-3 py-1.5 text-[12px] font-medium hover:bg-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-accent"
         >
           {submitting ? "Recording…" : "Record"}
@@ -399,9 +390,7 @@ function TransactionForm({
         </p>
       )}
       <p className="text-[10px] text-ink3">
-        Currency {currency}. BUY/SELL need the instrument&apos;s asset UUID — symbol lookup requires the
-        Asset API (api-spec §11), not implemented in the backend yet. Fees: added to cost on BUY,
-        subtracted from proceeds on SELL.
+        Currency {currency}. BUY/SELL fees: added to cost on BUY, subtracted from proceeds on SELL.
       </p>
     </form>
   );
