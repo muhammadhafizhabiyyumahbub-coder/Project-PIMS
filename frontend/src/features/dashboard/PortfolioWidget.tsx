@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/components/Badge";
-import { formatSignedMoneyString, formatMoneyString, pnlTone } from "@/lib/format";
-import { ApiRequestError, getValuation, listPortfolios } from "@/services/api";
-import type { Portfolio, Valuation } from "@/types/api";
+import { formatSignedMoneyString, formatMoneyString, formatReturnPct, pnlTone } from "@/lib/format";
+import { ApiRequestError, getPerformance, getValuation, listPortfolios } from "@/services/api";
+import type { Portfolio, PortfolioPerformance, Valuation } from "@/types/api";
 
 const MAX_WIDGET_ROWS = 4;
 
@@ -16,6 +16,7 @@ const MAX_WIDGET_ROWS = 4;
 export default function PortfolioWidget() {
   const [portfolios, setPortfolios] = useState<Portfolio[] | null>(null);
   const [valuations, setValuations] = useState<Record<string, Valuation>>({});
+  const [performances, setPerformances] = useState<Record<string, PortfolioPerformance>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -28,13 +29,26 @@ export default function PortfolioWidget() {
         const list = listEnvelope.data;
         if (cancelled) return;
         setPortfolios(list);
-        const results = await Promise.allSettled(list.map((p) => getValuation(p.id)));
+        const results = await Promise.allSettled(
+          list.map(async (p) => {
+            const [valuation, performance] = await Promise.all([
+              getValuation(p.id),
+              getPerformance(p.id),
+            ]);
+            return { valuation: valuation.data, performance: performance.data };
+          }),
+        );
         if (cancelled) return;
-        const map: Record<string, Valuation> = {};
+        const valuationMap: Record<string, Valuation> = {};
+        const performanceMap: Record<string, PortfolioPerformance> = {};
         results.forEach((result, index) => {
-          if (result.status === "fulfilled") map[list[index].id] = result.value.data;
+          if (result.status === "fulfilled") {
+            valuationMap[list[index].id] = result.value.valuation;
+            performanceMap[list[index].id] = result.value.performance;
+          }
         });
-        setValuations(map);
+        setValuations(valuationMap);
+        setPerformances(performanceMap);
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -106,7 +120,7 @@ export default function PortfolioWidget() {
                 {valuation === undefined ? (
                   <span className="text-[11px] text-ink3">loading…</span>
                 ) : (
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex flex-wrap items-center gap-3 shrink-0">
                     <span className="text-[13px] font-mono tabular-nums">
                       {valuation.total_value === null ? (
                         <span className="text-ink3 text-[11px]">value not available ({valuation.valuation_status.toLowerCase()})</span>
@@ -118,6 +132,17 @@ export default function PortfolioWidget() {
                       {valuation.unrealized_pnl === null ? "—" : formatSignedMoneyString(valuation.unrealized_pnl)}
                     </span>
                     <Badge label={valuation.valuation_status} />
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-[10px] text-ink2 font-sans">TWR</span>
+                      <span
+                        className="text-[11px] font-mono tabular-nums"
+                        title={performances[portfolio.id]?.twr_reason ?? undefined}
+                      >
+                        {performances[portfolio.id]?.twr === null
+                          ? "tidak tersedia"
+                          : formatReturnPct(performances[portfolio.id]?.twr)}
+                      </span>
+                    </div>
                   </div>
                 )}
               </li>

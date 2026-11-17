@@ -8,6 +8,7 @@ import { formatMoneyString, formatSignedMoneyString, formatUtc, pnlTone } from "
 import { ApiRequestError, createSnapshot, createTransaction, getHoldings, getPortfolio, getValuation, listSnapshots, listTransactions } from "@/services/api";
 import type { AssetSummary, Holding, Portfolio, PortfolioSnapshot, Transaction, Valuation } from "@/types/api";
 import AssetPicker from "./AssetPicker";
+import PerformancePanel from "./PerformancePanel";
 
 const TRANSACTION_TYPES = ["DEPOSIT", "WITHDRAWAL", "BUY", "SELL"] as const;
 const ASSET_TYPES: readonly string[] = ["BUY", "SELL"];
@@ -102,6 +103,7 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
       </header>
 
       <ValuationSummary valuation={valuation} />
+      <PerformancePanel portfolioId={portfolioId} />
       <SnapshotHistory portfolioId={portfolioId} />
       <HoldingsTable holdings={holdings} statusReason={STATUS_REASONS[valuation.valuation_status]} />
       <TransactionForm portfolioId={portfolioId} currency={portfolio.base_currency} onRecorded={() => setReloadKey((k) => k + 1)} />

@@ -70,6 +70,27 @@ export function formatSignedMoneyString(value: string | null | undefined): strin
   return `+${formatMoneyString(value)}`;
 }
 
+/**
+ * Return fraction string ("0.25") → percent string ("25%").
+ * The backend sends returns as decimal fractions (technical-decisions §7.10).
+ * This is pure string surgery: the decimal point is shifted two places right,
+ * so the value is never parsed as a Number and no float rounding is introduced.
+ * null/undefined → "—" (callers show the paired reason instead).
+ */
+export function formatReturnPct(value: string | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  const negative = value.startsWith("-");
+  const magnitude = value.startsWith("-") || value.startsWith("+") ? value.slice(1) : value;
+  const dot = magnitude.indexOf(".");
+  const digits = magnitude.replace(".", "");
+  const cut = (dot === -1 ? digits.length : dot) + 2;
+  const padded = digits.length < cut ? digits.padEnd(cut, "0") : digits;
+  const intPart = padded.slice(0, cut).replace(/^0+(?=\d)/, "");
+  const fracPart = padded.slice(cut).replace(/0+$/, "");
+  const body = fracPart === "" ? groupDigits(intPart) : `${groupDigits(intPart)}.${fracPart}`;
+  return `${negative ? "-" : ""}${body}%`;
+}
+
 /** P&L text tone class; reads only the sign character, no numeric parsing. */
 export function pnlTone(value: string | null | undefined): string {
   if (value === null || value === undefined) return "text-ink3";

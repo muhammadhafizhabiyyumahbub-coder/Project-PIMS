@@ -197,6 +197,29 @@ export interface SnapshotCreated extends PortfolioSnapshot {
   idempotent_replay: boolean;
 }
 
+// --- Portfolio performance (technical-decisions §7.10, spec §10) ------------
+// Returns are decimal fractions as strings (e.g. "0.25" = 25%), fixed 12 dp.
+// A null return means UNAVAILABLE: the paired *_reason explains why. The UI
+// must never render null as 0 and never recompute a return on the client.
+
+export interface PortfolioPerformance {
+  portfolio_id: string;
+  reporting_currency: string;
+  period_start: string | null;
+  period_end: string | null;
+  period_days: number | null;
+  return_status: string;
+  twr: string | null;
+  twr_reason: string | null;
+  simple_return: string | null;
+  simple_return_reason: string | null;
+  sub_period_count: number;
+  cagr: string | null;
+  cagr_reason: string | null;
+  realized_pnl: string | null;
+  unrealized_pnl: string | null;
+}
+
 // --- Asset summary (api-spec §11) -------------------------------------------
 // id and symbol are internal identity; provider symbols are never surfaced here.
 

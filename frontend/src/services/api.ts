@@ -8,6 +8,7 @@ import type {
   Holding,
   Opportunity,
   Portfolio,
+  PortfolioPerformance,
   PortfolioSnapshot,
   ResearchJob,
   ResearchReport,
@@ -197,6 +198,20 @@ export function listSnapshots(
   const suffix = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
   return request<PortfolioSnapshot[]>(
     `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/snapshots?limit=50${suffix}`,
+  );
+}
+
+/** Window start is the only thing the UI picks; the backend reports the period
+ * it actually measured (and returns UNAVAILABLE if no snapshot bounds it). */
+export function getPerformance(
+  portfolioId: string,
+  params?: { start?: string },
+): Promise<Envelope<PortfolioPerformance>> {
+  const query = new URLSearchParams();
+  if (params?.start) query.set("start", params.start);
+  const suffix = query.toString();
+  return request<PortfolioPerformance>(
+    `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/performance${suffix ? `?${suffix}` : ""}`,
   );
 }
 
