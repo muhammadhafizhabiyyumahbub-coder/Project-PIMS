@@ -316,6 +316,21 @@ Holdings dan analytics dapat diambil melalui endpoint khusus.
 - Data historis tidak boleh hilang secara tidak sengaja.
 - Portfolio yang memiliki transaksi harus mengikuti kebijakan archive atau deletion yang ditetapkan domain.
 
+## 8.5 Portfolio Valuation
+
+Endpoint tambahan yang telah disetujui (APPROVED, lihat technical-decisions §7.6):
+
+`GET /portfolios/{id}/valuation`
+
+Bentuk response mengikuti portfolio-engine-spec §8 (status model) dan §5.3 (money as decimal string).
+
+Semantik null vs nol (APPROVED, wajib dijaga semua konsumen API):
+
+- `invested_value` = `"0"` hanya bila portfolio tidak memiliki posisi sama sekali — nol sungguhan.
+- `invested_value` = `null` bila ada posisi tetapi harga tidak tersedia (PARTIAL/STALE).
+- `total_value` dan `unrealized_pnl` hanya diisi saat status `COMPLETE`; selain itu `null`.
+- `null` berarti "tidak tersedia", bukan nol. Klien tidak boleh menampilkan null sebagai 0.
+
 # 9. Transaction API
 
 Mengelola aktivitas finansial portofolio.
