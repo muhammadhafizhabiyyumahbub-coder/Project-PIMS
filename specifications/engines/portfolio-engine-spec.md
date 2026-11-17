@@ -389,11 +389,11 @@ Setiap metode memiliki implikasi berbeda terhadap cost basis dan realized P&L.
 
 ## 7.3 Initial Decision Status
 
-Cost basis methodology masih memerlukan keputusan teknis dan accounting.
+**Decision:** WEIGHTED AVERAGE COST (moving average).
 
-OpenCode tidak boleh memilih atau mengimplementasikan methodology secara diam-diam.
+**Status:** APPROVED (2026-11-17, Project Owner; dicatat di `docs/decisions/technical-decisions.md` §7.4). FIFO dan Specific Identification ditunda.
 
-Sebelum implementasi final, methodology harus disetujui dan dicatat dalam `technical-decisions.md`.
+OpenCode tidak boleh mengganti methodology tanpa keputusan baru dari Project Owner.
 
 # 8. Portfolio Valuation
 

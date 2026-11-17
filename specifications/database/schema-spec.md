@@ -1148,13 +1148,13 @@ The following decisions remain open and must not be silently finalized by OpenCo
 
 | Decision | Current Status |
 |---|---|
-| SQLAlchemy | PROPOSED |
-| Alembic | PROPOSED |
+| SQLAlchemy | APPROVED (2026-11-17, Project Owner; technical-decisions.md §3.5) |
+| Alembic | APPROVED (2026-11-17, Project Owner; technical-decisions.md §3.5) |
 | TimescaleDB | DEFERRED |
 | Redis | DEFERRED |
-| Portfolio cost basis methodology | Requires approval |
+| Portfolio cost basis methodology | APPROVED — Weighted Average Cost (2026-11-17, Project Owner; technical-decisions.md §7.4). FIFO/Specific-ID deferred |
 | Performance calculation methodology | Requires approval |
-| Fee and dividend treatment | Requires approval |
+| Fee and dividend treatment | APPROVED for BUY/SELL fees (fee-in-cost-basis for BUY, fee-reduces-proceeds for SELL; portfolio-engine-spec §4.3–§4.4). Dividend treatment still requires approval |
 | Corporate actions schema | DEFERRED |
 | Tax schema | DEFERRED |
 | User authentication schema | Requires approval |
@@ -1163,6 +1163,11 @@ The following decisions remain open and must not be silently finalized by OpenCo
 | Analytics result retention | Requires approval |
 | Multi-user ownership model | Requires approval |
 | PostgreSQL schema separation | Deferred |
+
+Approved additive deviations (2026-11-17, Project Owner; details in technical-decisions.md §7.5):
+
+- `scanner_results` additional columns: `timeframe`, `freshness_status`, `data_timestamp`.
+- `risk_results` used with asset scope in the current slice; portfolio-scope fields to be added when portfolio risk lands.
 
 # 21. Acceptance Criteria
 

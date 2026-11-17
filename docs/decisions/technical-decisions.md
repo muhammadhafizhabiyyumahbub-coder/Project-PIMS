@@ -135,7 +135,7 @@ Implementation rules:
 
 **Decision:** SQLAlchemy sebagai ORM utama dan Alembic untuk database migrations.
 
-**Status:** PROPOSED
+**Status:** APPROVED (2026-11-17, Project Owner)
 
 Alasan:
 
@@ -143,6 +143,7 @@ Alasan:
 - Mendukung relational mapping.
 - Mendukung asynchronous database access.
 - Alembic mempermudah versioning schema.
+- Sudah dipakai dan teruji: vertical slice (market data, engines, scanner, research) dan portfolio Stage A berjalan di atas SQLAlchemy 2.0 + Alembic dengan 67 test lulus terhadap PostgreSQL nyata.
 
 Implementation rules setelah disetujui:
 
@@ -514,6 +515,42 @@ Prioritas awal:
 Prioritas tersebut merupakan urutan pengembangan yang disepakati secara konseptual. Detail urutan MVP dapat disesuaikan melalui roadmap setelah dependensi teknis dievaluasi.
 
 Engine lanjutan seperti Backtesting, Factor Analysis, Attribution, dan Stress Testing tidak perlu dibuat pada tahap awal.
+
+## 7.4 Portfolio Cost Basis Methodology
+
+**Decision:** WEIGHTED AVERAGE COST (moving average) sebagai cost basis methodology.
+
+**Status:** APPROVED (2026-11-17, Project Owner)
+
+Alasan:
+
+- Konsisten dengan kolom `average_cost` / `cost_basis` pada `specifications/database/schema-spec.md` §5.4.
+- Deterministik dan mudah diuji (replay transaksi menghasilkan state yang sama).
+- FIFO ditunda dan tidak diimplementasikan pada tahap ini.
+
+Aturan yang disetujui bersama metodologi:
+
+- Seluruh aritmetika memakai `Decimal`, tanpa rounding di dalam engine; quantize ke NUMERIC(30,12) hanya saat penulisan ke DB.
+- Fee BUY dikapitalisasi ke cost basis: TotalCost = qty×price + fee (portfolio-engine-spec §4.3).
+- Fee SELL mengurangi proceeds: NetProceeds = qty×price − fee (portfolio-engine-spec §4.4).
+- Average cost tidak berubah saat SELL; realized P&L = net proceeds − (avg_cost × qty sold).
+- Realized P&L dan unrealized P&L dihitung dan dilaporkan terpisah (portfolio-engine-spec §9).
+
+Implementasi: `backend/app/engines/portfolio/cost_basis.py`.
+
+## 7.5 Portfolio Schema Deviations (Approved, Additive)
+
+**Status:** APPROVED (2026-11-17, Project Owner) — perubahan aditif, tidak menghapus fungsionalitas.
+
+1. `scanner_results` memiliki kolom tambahan di luar schema-spec §8.3: `timeframe`, `freshness_status`, `data_timestamp`.
+   - Beda dari spec: spec mendefinisikan hasil scanner tanpa identitas waktu-data per baris.
+   - Alasan: dashboard dan qualification membutuhkan freshness per result; tanpa kolom ini status data yang ditampilkan hanya akurat pada saat scan berjalan.
+   - Dampak: additif; tidak mengubah tabel/kolom lain; konsisten dengan aturan freshness di `data/validation/freshness.py`.
+
+2. `risk_results` dipakai dengan scope aset (`asset_id` + `risk_classification`) pada vertical slice, sedangkan schema-spec §7.3 mendefinisikan risk portfolio-scope.
+   - Beda dari spec: spec mengaitkan risk_results ke portfolio; implementasi saat ini menghitung risk per aset.
+   - Alasan: qualification per instrumen (gating scanner + AI research) membutuhkan risk level aset; portfolio-scope menunggu Phase 3/4.
+   - Dampak: ketika portfolio risk diimplementasikan, harus diputuskan memakai kolom nullable tambahan atau tabel terpisah. Kolom `portfolio_id` pada spec §7.3 belum ada di tabel saat ini dan akan ditambahkan lewat migration saat dibutuhkan.
 
 # 8. Market Scanner Decisions
 

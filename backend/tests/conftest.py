@@ -28,6 +28,11 @@ from app.data.storage.candles import upsert_candles  # noqa: E402
 from datetime import datetime, timedelta, timezone  # noqa: E402
 
 TRUNCATE_TABLES = [
+    "portfolio_snapshots",
+    "holdings",
+    "cash_ledger",
+    "transactions",
+    "portfolios",
     "research_jobs",
     "research_reports",
     "research_requests",
