@@ -6,6 +6,7 @@ import {
   HistogramSeries,
   createChart,
   type IChartApi,
+  type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
 
@@ -55,15 +56,20 @@ export default function CandleChart({
   candlesResponse,
   loading,
   error,
+  updateBar,
   className,
 }: {
   candlesResponse: CandlesResponse | null;
   loading: boolean;
   error: string | null;
+  updateBar?: ValidatedBar | null;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const lastBarRef = useRef<ValidatedBar | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -100,6 +106,9 @@ export default function CandleChart({
       1,
     );
     volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
+    lastBarRef.current = null;
 
     if (candlesResponse) {
       const bars = toBars(candlesResponse.candles);
@@ -119,6 +128,36 @@ export default function CandleChart({
       chartRef.current = null;
     };
   }, [candlesResponse]);
+
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    const volumeSeries = volumeSeriesRef.current;
+    const bar = updateBar;
+    if (!series || !bar) return;
+
+    const previous = lastBarRef.current;
+    if (previous && bar.time <= previous.time) return;
+    if (
+      previous &&
+      previous.time === bar.time &&
+      previous.open === bar.open &&
+      previous.high === bar.high &&
+      previous.low === bar.low &&
+      previous.close === bar.close &&
+      previous.volume === bar.volume
+    ) {
+      return;
+    }
+    series.update(bar);
+    if (volumeSeries) {
+      volumeSeries.update({
+        time: bar.time,
+        value: bar.volume,
+        color: bar.close >= bar.open ? "rgba(63,185,80,0.5)" : "rgba(248,81,73,0.5)",
+      });
+    }
+    lastBarRef.current = bar;
+  }, [updateBar]);
 
   return (
     <div className={`bg-card border border-line rounded-lg overflow-hidden ${className ?? ""}`}>

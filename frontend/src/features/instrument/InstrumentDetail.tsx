@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge, DeltaText } from "@/components/Badge";
-import CandleChart from "@/features/charts/CandleChart";
+import CandleChart, { toBars, type ValidatedBar } from "@/features/charts/CandleChart";
 import ResearchPanel from "@/features/research/ResearchPanel";
-import { formatPrice } from "@/lib/format";
+import { useMarketFeed } from "@/hooks/useMarketFeed";
+import { formatPrice, formatUtc } from "@/lib/format";
 import { ApiRequestError, getCandles, getOpportunities, refreshMarketData } from "@/services/api";
 import type { CandlesResponse, Opportunity } from "@/types/api";
 
@@ -18,20 +19,29 @@ export default function InstrumentDetail({ symbol, timeframe: initialTimeframe }
   const [timeframe, setTimeframe] = useState<Timeframe>(
     (TIMEFRAMES as readonly string[]).includes(initialTimeframe ?? "") ? (initialTimeframe as Timeframe) : "1h",
   );
+  const feed = useMarketFeed(symbol, timeframe);
 
   return (
     <main className="mx-auto max-w-[1700px] px-4 py-6 sm:px-6 flex flex-col gap-5">
       <Link href="/" className="text-[12px] text-ink2 hover:text-ink focus-visible:outline focus-visible:outline-accent self-start">
         ← Back to dashboard
       </Link>
-      <InstrumentHeader symbol={symbol} timeframe={timeframe} />
-      <CandleSection symbol={symbol} timeframe={timeframe} onTimeframeChange={setTimeframe} />
+      <InstrumentHeader symbol={symbol} timeframe={timeframe} feed={feed} />
+      <CandleSection symbol={symbol} timeframe={timeframe} onTimeframeChange={setTimeframe} feed={feed} />
       <ResearchPanel symbol={symbol} timeframe={timeframe} />
     </main>
   );
 }
 
-function InstrumentHeader({ symbol, timeframe }: { symbol: string; timeframe: string }) {
+function InstrumentHeader({
+  symbol,
+  timeframe,
+  feed,
+}: {
+  symbol: string;
+  timeframe: string;
+  feed: ReturnType<typeof useMarketFeed>;
+}) {
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,7 +89,46 @@ function InstrumentHeader({ symbol, timeframe }: { symbol: string; timeframe: st
           </span>
         </div>
       </div>
+      <MarketFeedRow feed={feed} />
     </header>
+  );
+}
+
+/**
+ * Feed state comes straight from the backend message (feed_status) or from the
+ * client connection state. Nothing here is inferred or promoted to LIVE: the
+ * server has no stream, so the best honest value is DELAYED.
+ */
+function MarketFeedRow({ feed }: { feed: ReturnType<typeof useMarketFeed> }) {
+  const connection = feed.connection;
+  const label = connection === "READY" ? (feed.quote?.feed_status ?? "UNAVAILABLE") : connection;
+  const source = feed.quote?.source ?? "rest_poll";
+  const interval = feed.quote?.poll_interval_seconds;
+  const lastData = feed.quote?.data_timestamp ?? null;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-2.5 text-[11px] text-ink2">
+      <span className="flex items-center gap-2">
+        <span className="text-ink3">Feed</span>
+        <Badge label={label} mono />
+      </span>
+      <span>
+        Data terakhir <span className="font-mono">{formatUtc(lastData)}</span>
+      </span>
+      <span className="text-ink3">
+        Sumber {source}
+        {interval ? ` · polling DB tiap ${interval}s` : ""} · bukan stream realtime
+      </span>
+      {(connection === "DISCONNECTED" || connection === "ERROR") && (
+        <button
+          type="button"
+          onClick={feed.reconnect}
+          className="rounded border border-line px-2 py-0.5 text-[11px] text-ink2 hover:bg-hover focus-visible:outline focus-visible:outline-accent"
+        >
+          Reconnect feed
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -87,15 +136,34 @@ function CandleSection({
   symbol,
   timeframe,
   onTimeframeChange,
+  feed,
 }: {
   symbol: string;
   timeframe: Timeframe;
   onTimeframeChange: (timeframe: Timeframe) => void;
+  feed: ReturnType<typeof useMarketFeed>;
 }) {
   const [candles, setCandles] = useState<CandlesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const loading = candles === null && error === null;
+
+  const feedBar = useMemo<ValidatedBar | null>(() => {
+    const fed = feed.candle?.candle;
+    if (!fed) return null;
+    const [bar] = toBars([
+      {
+        open_time: new Date(fed.time * 1000).toISOString(),
+        close_time: null,
+        open: Number(fed.open),
+        high: Number(fed.high),
+        low: Number(fed.low),
+        close: Number(fed.close),
+        volume: Number(fed.volume),
+      },
+    ]);
+    return bar ?? null;
+  }, [feed.candle]);
 
   const fetchCandles = useCallback(async (): Promise<CandlesResponse> => {
     const envelope = await getCandles(symbol, timeframe);
@@ -165,7 +233,7 @@ function CandleSection({
           {refreshing ? "Refreshing…" : "Refresh Data"}
         </button>
       </div>
-      <CandleChart candlesResponse={candles} loading={loading} error={error} />
+      <CandleChart candlesResponse={candles} loading={loading} error={error} updateBar={feedBar} />
     </section>
   );
 }

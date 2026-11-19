@@ -7,6 +7,13 @@ const TONES: Record<string, string> = {
   LIVE: "bg-gain-bg text-gain border-gain-line",
   COMPLETED: "bg-gain-bg text-gain border-gain-line",
   COMPLETE: "bg-gain-bg text-gain border-gain-line",
+  // Feed states that are not a live stream
+  DELAYED: "bg-warn-bg text-warn border-warn-line",
+  CONNECTED: "bg-accent-bg text-accent border-accent-line",
+  CONNECTING: "bg-recessed text-ink2 border-line",
+  RECONNECTING: "bg-recessed text-ink2 border-line",
+  DISCONNECTED: "bg-recessed text-ink2 border-line",
+  ERROR: "bg-loss-bg text-loss border-loss-line",
   // Failure states
   FAILED: "bg-loss-bg text-loss border-loss-line",
   NOT_QUALIFIED: "bg-loss-bg text-loss border-loss-line",
