@@ -15,6 +15,7 @@ import type {
   ResearchJob,
   ResearchReport,
   ScannerRunSummary,
+  ScannerQualification,
   SnapshotCreated,
   Transaction,
   Valuation,
@@ -99,6 +100,13 @@ export function runScanner(timeframe: string): Promise<Envelope<ScannerRunSummar
   return request<ScannerRunSummary>(`/api/v1/scanner/run?timeframe=${encodeURIComponent(timeframe)}`, {
     method: "POST",
   });
+}
+
+/** Qualification detail for one stored scanner result (api-spec §12). */
+export function getQualification(resultId: string): Promise<Envelope<ScannerQualification>> {
+  return request<ScannerQualification>(
+    `/api/v1/scanner/results/${encodeURIComponent(resultId)}/qualification`,
+  );
 }
 
 export function requestResearch(

@@ -30,6 +30,7 @@ def _opportunity(db: Session, result: ScannerResult, asset: Asset, market: Marke
     risk = readiness.get("RISK", {})
 
     return {
+        "scanner_result_id": str(result.id),
         "instrument": {"symbol": asset.symbol, "name": asset.name, "asset_type": asset.asset_type},
         "market": market.code if market else None,
         "current_price": last_close,

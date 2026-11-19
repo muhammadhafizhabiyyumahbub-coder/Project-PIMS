@@ -13,12 +13,20 @@ export default function Home() {
             Market overview and scanner results. Portfolio values come from the Portfolio Engine.
           </p>
         </div>
-        <Link
-          href="/portfolios"
-          className="text-[11px] text-accent underline underline-offset-2 focus-visible:outline focus-visible:outline-accent"
-        >
-          Portfolios
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/scanner"
+            className="text-[11px] text-accent underline underline-offset-2 focus-visible:outline focus-visible:outline-accent"
+          >
+            Scanner
+          </Link>
+          <Link
+            href="/portfolios"
+            className="text-[11px] text-accent underline underline-offset-2 focus-visible:outline focus-visible:outline-accent"
+          >
+            Portfolios
+          </Link>
+        </div>
       </header>
       <PortfolioWidget />
       <OpportunitiesSection />

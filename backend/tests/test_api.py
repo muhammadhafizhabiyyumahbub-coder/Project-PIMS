@@ -49,6 +49,7 @@ def test_opportunities_shape_and_truthfulness(client, analyzed_universe):
     assert len(rows) == 3
 
     required_fields = {
+        "scanner_result_id",
         "instrument",
         "market",
         "current_price",
@@ -72,6 +73,10 @@ def test_opportunities_shape_and_truthfulness(client, analyzed_universe):
     assert row["market_regime"] in {"BULLISH", "BEARISH", "SIDEWAYS"}
     assert row["data_status"] in {"LIVE", "STALE"}
     assert row["approval_status"] in {"QUALIFIED", "PARTIAL", "NOT_QUALIFIED", "STALE"}
+    # The id must be usable for the qualification detail the scanner page expands.
+    detail = client.get(f"/api/v1/scanner/results/{row['scanner_result_id']}/qualification")
+    assert detail.status_code == 200
+    assert detail.json()["data"]["instrument"] == row["instrument"]["symbol"]
 
 
 def test_opportunities_filter_by_market(client, analyzed_universe):

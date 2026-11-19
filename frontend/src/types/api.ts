@@ -16,6 +16,9 @@ export interface EngineReadiness {
 }
 
 export interface Opportunity {
+  /** Identifies the scanner result row this opportunity came from; used to load
+   * qualification detail via GET /scanner/results/{id}/qualification. */
+  scanner_result_id: string;
   instrument: { symbol: string; name: string; asset_type: string };
   market: string | null;
   current_price: number | null;
@@ -30,6 +33,17 @@ export interface Opportunity {
   engine_readiness: Record<string, EngineReadiness>;
   updated_at: string | null;
   data_status: string;
+}
+
+/** GET /scanner/results/{id}/qualification response body. */
+export interface ScannerQualification {
+  scanner_result_id: string;
+  instrument: string;
+  approval_status: string;
+  passed_by: string[];
+  engine_readiness: Record<string, EngineReadiness>;
+  data_status: string;
+  updated_at: string;
 }
 
 export interface Candle {
