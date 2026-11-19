@@ -8,7 +8,12 @@ The platform combines portfolio management, market data visualization, quantitat
 
 The primary objective is to provide a structured environment for understanding portfolio performance, analyzing market conditions, evaluating risk, and supporting informed investment decisions.
 
-> **Project Status:** Under Development
+> **Project Status:** V1 Release Candidate — not yet released.
+>
+> See [docs/RELEASE_NOTES_V1.md](docs/RELEASE_NOTES_V1.md) for what exists,
+> [docs/RELEASE_KNOWN_ISSUES.md](docs/RELEASE_KNOWN_ISSUES.md) for open issues,
+> and [docs/user/PANDUAN_PENGGUNA.md](docs/user/PANDUAN_PENGGUNA.md) for the
+> Indonesian user guide.
 
 ---
 
@@ -206,6 +211,9 @@ Project documentation is separated by responsibility.
 | `docs/database/` | Database design documentation |
 | `docs/decisions/` | Technical architecture decisions |
 | `docs/diagrams/` | System and data flow diagrams |
+| `docs/user/` | User-facing guides (Indonesian) |
+| `docs/RELEASE_NOTES_V1.md` | V1 release-candidate feature summary |
+| `docs/RELEASE_KNOWN_ISSUES.md` | Open issues and V1 limitations |
 | `specifications/` | Detailed functional and technical requirements |
 | `design-reference/` | UI and design references |
 
@@ -260,7 +268,7 @@ Do not assume that placeholder commands are executable before they are verified 
 
 ## 11. Important Notes
 
-- PIMS is currently under development.
+- PIMS is at V1 release-candidate stage and has not been released.
 - Market data availability depends on external providers and their licensing conditions.
 - Not all market data sources guarantee real-time updates.
 - Mock data must never be represented as actual market data.

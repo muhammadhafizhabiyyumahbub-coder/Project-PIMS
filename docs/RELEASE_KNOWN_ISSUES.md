@@ -1,0 +1,66 @@
+# PIMS V1 — Known Issues
+
+**Status:** Release Candidate — **belum dirilis**.
+**Tanggal:** 19 November 2026
+
+Dokumen ini mencatat daftar isu nyata, level urgensi, dan dampaknya terhadap
+sistem pada tahap Release Candidate V1.
+
+---
+
+## 1. Daftar isu dan keterbatasan
+
+### 1.1 Jalur Bybit live belum dapat diuji langsung
+- **Level:** High
+- **Modul:** Market Data Provider
+- **Deskripsi:** Domain API exchange (Bybit) sering terblokir oleh ISP di lingkungan pengujian ini.
+- **Dampak:** Adapter Bybit tersedia secara kode tetapi tidak dapat diuji langsung terhadap endpoint live exchange. Provider crypto default diatur ke `YAHOO`.
+- **Rencana penanganan:** Gunakan proxy/VPN atau provider data terverifikasi saat pengujian lingkungan produksi.
+
+### 1.2 Jalur LLM nyata belum dijalankan
+- **Level:** Medium
+- **Modul:** AI Research
+- **Deskripsi:** Tanpa variabel environment `PIMS_LLM_*`, orchestrator AI tidak memanggil LLM nyata.
+- **Dampak:** Job research berakhir `FAILED` dengan kode `PROVIDER_NOT_CONFIGURED` (kejujuran status dijaga, tidak ada laporan palsu). Pengujian backend memakai mock HTTP / error handler.
+- **Rencana penanganan:** Konfigurasi endpoint dan API key LLM kompatibel OpenAI jika fitur research ingin diaktifkan.
+
+### 1.3 Metrik Risiko & Konsentrasi belum memiliki beta, benchmark, dan HHI
+- **Level:** Medium
+- **Modul:** Analytics Engines (Risk & Allocation)
+- **Deskripsi:** Engine alokasi hanya menghitung akumulasi bobot Top-N (spec tidak mendefinisikan HHI). Engine risiko belum menghitung beta terhadap indeks pasar atau perbandingan benchmark.
+- **Dampak:** Analisis konsentrasi terbatas pada Top-N; analisis risiko berfokus pada statistik portofolio internal tanpa perbandingan pasar relatif.
+- **Rencana penanganan:** Tambahkan data series benchmark dan spesifikasi HHI/beta pada fase analitis berikutnya.
+
+### 1.4 Hasil analitis tingkat portfolio tidak dipersistensikan
+- **Level:** Medium
+- **Modul:** Analytics Persistence
+- **Deskripsi:** Hasil perhitungan performance, risiko portfolio, dan alokasi dihitung secara dinamis saat diminta HTTP request.
+- **Dampak:** Tidak ada tabel `performance_results` atau `allocation_results`. Tabel `risk_results` dan `analytics_runs` yang ada di database hanya menyimpan output runner analitis tingkat **instrumen** (teknikal, market regime, risiko instrumen).
+- **Rencana penanganan:** Tambahkan skema dan repositori persistensi analitis tingkat portfolio jika histori analitis perlu disimpan secara permanen.
+
+### 1.5 Penjadwalan snapshot portfolio masih manual
+- **Level:** Medium
+- **Modul:** Portfolio Management
+- **Deskripsi:** Belum ada background scheduler untuk mengambil snapshot portfolio berkala. `scanner_schedule_enabled` dan `research_schedule_enabled` default `False`.
+- **Dampak:** Snapshot portfolio hanya dibuat saat pengguna memanggil `POST /portfolios/{id}/snapshots`.
+- **Rencana penanganan:** Tambahkan worker/cron terpisah untuk otomatisasi snapshot harian.
+
+### 1.6 Docker tidak tersedia di lingkungan pengujian ini
+- **Level:** Low
+- **Modul:** Infrastructure / Dev Environment
+- **Deskripsi:** Perintah `docker` tidak terinstall/dikenali di mesin tempat pengujian ini berjalan.
+- **Dampak:** File `docker-compose.yml` belum dapat dijalankan di mesin ini. Pengujian dan eksekusi lokal memakai proses Python (`uvicorn`) dan Node.js (`next`) langsung terhadap PostgreSQL lokal.
+- **Rencana penanganan:** Siapkan lingkungan berfasilitas Docker untuk verifikasi kontainerisasi.
+
+### 1.7 File lock backend `backend/uv.lock` belum diputuskan
+- **Level:** Low
+- **Modul:** Version Control / Dependency Management
+- **Deskripsi:** File `backend/uv.lock` terbentuk tetapi belum masuk ke `.gitignore` maupun dicommit.
+- **Dampak:** Status git repository menampilkan `backend/uv.lock` sebagai untracked file.
+- **Rencana penanganan:** Putuskan apakah lockfile `uv` dikomit untuk mengunci dependency backend atau dimasukkan ke `.gitignore`.
+
+---
+
+## 2. Ringkasan dampak terhadap pemakaian
+
+Sistem berada dalam kondisi **Release Candidate yang jujur dan konsisten**. Seluruh batasan di atas tidak menyebabkan silent data corruption atau kalkulasi palsu. Saat data/fitur belum tersedia, API dan UI secara eksplisit mengembalikan status `UNAVAILABLE`, `PARTIAL`, `STALE`, atau `PROVIDER_NOT_CONFIGURED`.
