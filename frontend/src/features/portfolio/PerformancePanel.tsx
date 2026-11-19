@@ -14,7 +14,7 @@ const PERIODS = [
   { key: "1Y", label: "1 tahun" },
 ] as const;
 
-type PeriodKey = (typeof PERIODS)[number]["key"];
+export type PeriodKey = (typeof PERIODS)[number]["key"];
 
 /**
  * Window start for a period choice. This is the only date the UI computes; the
@@ -22,14 +22,22 @@ type PeriodKey = (typeof PERIODS)[number]["key"];
  * period_end), so the UI never decides what was actually measured. "Semua"
  * sends no bound, which lets the backend use the whole stored history.
  */
-function startFor(key: PeriodKey): string | undefined {
+export function startFor(key: PeriodKey): string | undefined {
   if (key === "ALL") return undefined;
   const days = key === "30D" ? 30 : key === "90D" ? 90 : 365;
   return new Date(Date.now() - days * 86_400_000).toISOString();
 }
 
-export default function PerformancePanel({ portfolioId }: { portfolioId: string }) {
-  const [period, setPeriod] = useState<PeriodKey>("ALL");
+export default function PerformancePanel({
+  portfolioId,
+  period,
+  onPeriodChange,
+}: {
+  portfolioId: string;
+  /** Lifted to the page so "Simpan analisis" can persist the chosen period. */
+  period: PeriodKey;
+  onPeriodChange: (period: PeriodKey) => void;
+}) {
   const [performance, setPerformance] = useState<PortfolioPerformance | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -70,7 +78,7 @@ export default function PerformancePanel({ portfolioId }: { portfolioId: string 
           Periode
           <select
             value={period}
-            onChange={(event) => setPeriod(event.target.value as PeriodKey)}
+            onChange={(event) => onPeriodChange(event.target.value as PeriodKey)}
             className="bg-recessed border border-line rounded px-2 py-1.5 text-[12px] text-ink focus-visible:outline focus-visible:outline-accent"
           >
             {PERIODS.map((p) => (

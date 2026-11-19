@@ -358,6 +358,74 @@ export interface PortfolioRisk {
   holdings: RiskHolding[];
 }
 
+// --- Stored analytics runs (technical-decisions §7.12, Stage R) --------------
+// A run and its stored result rows, exactly as persisted. Decimal strings keep
+// the backend's precision; a null metric is UNAVAILABLE and is shown as such,
+// never as 0. results length and window/period come from input_metadata.
+
+export type AnalyticsType = "performance" | "risk" | "allocation";
+
+export interface AnalyticsRun {
+  id: string;
+  engine_type: string;
+  portfolio_id: string | null;
+  observation_start: string | null;
+  observation_end: string | null;
+  calculation_version: string;
+  execution_status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  input_metadata: Record<string, unknown>;
+  error_message: string | null;
+}
+
+export interface StoredPerformanceResult {
+  id: string;
+  analytics_run_id: string;
+  portfolio_id: string;
+  period_start: string;
+  period_end: string;
+  total_return: string | null;
+  daily_return: string | null;
+  realized_pnl: string | null;
+  unrealized_pnl: string | null;
+  cagr: string | null;
+  reporting_currency: string;
+  methodology: string;
+  result_metadata: Record<string, unknown>;
+}
+
+export interface StoredRiskResult {
+  id: string;
+  analytics_run_id: string;
+  portfolio_id: string | null;
+  observation_period: string | null;
+  volatility: string | null;
+  max_drawdown: string | null;
+  value_at_risk: string | null;
+  confidence_level: string | null;
+  risk_classification: string | null;
+  result_metadata: Record<string, unknown>;
+}
+
+export interface StoredAllocationResult {
+  id: string;
+  analytics_run_id: string;
+  portfolio_id: string;
+  allocation_type: string;
+  allocation_key: string;
+  market_value: string | null;
+  allocation_percentage: string | null;
+  reporting_currency: string;
+  result_metadata: Record<string, unknown>;
+}
+
+/** A stored analytics run plus its result rows (POST returns this too). */
+export interface AnalyticsRunDetail {
+  run: AnalyticsRun;
+  results: Array<StoredPerformanceResult | StoredRiskResult | StoredAllocationResult>;
+}
+
 // --- Asset summary (api-spec §11) -------------------------------------------
 // id and symbol are internal identity; provider symbols are never surfaced here.
 

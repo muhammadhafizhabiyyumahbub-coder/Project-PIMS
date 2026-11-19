@@ -1,6 +1,9 @@
 "Centralized REST client. Unwraps the {data, meta} envelope; throws ApiRequestError on error envelopes.";
 
 import type {
+  AnalyticsRun,
+  AnalyticsRunDetail,
+  AnalyticsType,
   AssetSummary,
   Candle,
   CandlesResponse,
@@ -236,6 +239,43 @@ export function getAllocation(portfolioId: string): Promise<Envelope<PortfolioAl
 export function getRisk(portfolioId: string, windowDays: number): Promise<Envelope<PortfolioRisk>> {
   return request<PortfolioRisk>(
     `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/risk?window=${windowDays}`,
+  );
+}
+
+// --- Stored analytics runs (technical-decisions §7.12, Stage R) --------------
+
+/** Manual trigger: compute now and persist a run + its results. */
+export function createAnalyticsRun(
+  portfolioId: string,
+  body: { analysis_type: AnalyticsType; window_days?: number; start?: string },
+): Promise<Envelope<AnalyticsRunDetail>> {
+  return request<AnalyticsRunDetail>(
+    `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/analytics/runs`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/** Newest first; meta.pagination.next_cursor drives "Muat lagi". */
+export function listAnalyticsRuns(
+  portfolioId: string,
+  cursor?: string,
+): Promise<Envelope<AnalyticsRun[]>> {
+  const suffix = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+  return request<AnalyticsRun[]>(
+    `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/analytics/runs?limit=50${suffix}`,
+  );
+}
+
+export function getAnalyticsRun(
+  portfolioId: string,
+  runId: string,
+): Promise<Envelope<AnalyticsRunDetail>> {
+  return request<AnalyticsRunDetail>(
+    `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/analytics/runs/${encodeURIComponent(runId)}`,
   );
 }
 

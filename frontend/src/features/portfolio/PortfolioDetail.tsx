@@ -8,9 +8,10 @@ import { formatMoneyString, formatSignedMoneyString, formatUtc, pnlTone } from "
 import { ApiRequestError, createSnapshot, createTransaction, getHoldings, getPortfolio, getValuation, listSnapshots, listTransactions } from "@/services/api";
 import type { AssetSummary, Holding, Portfolio, PortfolioSnapshot, Transaction, Valuation } from "@/types/api";
 import AssetPicker from "./AssetPicker";
-import PerformancePanel from "./PerformancePanel";
+import PerformancePanel, { startFor, type PeriodKey } from "./PerformancePanel";
 import AllocationPanel from "./AllocationPanel";
 import RiskPanel from "./RiskPanel";
+import StoredAnalytics from "./StoredAnalytics";
 
 const TRANSACTION_TYPES = ["DEPOSIT", "WITHDRAWAL", "BUY", "SELL"] as const;
 const ASSET_TYPES: readonly string[] = ["BUY", "SELL"];
@@ -30,6 +31,10 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
   const [transactions, setTransactions] = useState<Transaction[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Period/window live here so "Simpan analisis" can persist exactly what the
+  // related panel is showing.
+  const [performancePeriod, setPerformancePeriod] = useState<PeriodKey>("ALL");
+  const [riskWindowDays, setRiskWindowDays] = useState<number>(90);
 
   const loading = loadError === null && (portfolio === null || valuation === null);
 
@@ -105,9 +110,10 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
       </header>
 
       <ValuationSummary valuation={valuation} />
+      <PerformancePanel portfolioId={portfolioId} period={performancePeriod} onPeriodChange={setPerformancePeriod} />
+      <RiskPanel portfolioId={portfolioId} windowDays={riskWindowDays} onWindowChange={setRiskWindowDays} />
       <AllocationPanel portfolioId={portfolioId} />
-      <PerformancePanel portfolioId={portfolioId} />
-      <RiskPanel portfolioId={portfolioId} />
+      <StoredAnalytics portfolioId={portfolioId} performanceStart={startFor(performancePeriod)} riskWindowDays={riskWindowDays} />
       <SnapshotHistory portfolioId={portfolioId} />
       <HoldingsTable holdings={holdings} statusReason={STATUS_REASONS[valuation.valuation_status]} />
       <TransactionForm portfolioId={portfolioId} currency={portfolio.base_currency} onRecorded={() => setReloadKey((k) => k + 1)} />

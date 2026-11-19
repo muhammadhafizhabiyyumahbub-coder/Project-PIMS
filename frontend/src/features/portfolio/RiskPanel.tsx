@@ -15,8 +15,16 @@ const WINDOWS = [30, 90, 180, 365] as const;
  * backend could not compute it, and its reason from metric_reasons is shown
  * instead. The client never computes, estimates or zero-fills a metric.
  */
-export default function RiskPanel({ portfolioId }: { portfolioId: string }) {
-  const [windowDays, setWindowDays] = useState<number>(90);
+export default function RiskPanel({
+  portfolioId,
+  windowDays,
+  onWindowChange,
+}: {
+  portfolioId: string;
+  /** Lifted to the page so "Simpan analisis" can persist the chosen window. */
+  windowDays: number;
+  onWindowChange: (windowDays: number) => void;
+}) {
   const [risk, setRisk] = useState<PortfolioRisk | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -54,7 +62,7 @@ export default function RiskPanel({ portfolioId }: { portfolioId: string }) {
           Window
           <select
             value={windowDays}
-            onChange={(event) => setWindowDays(Number(event.target.value))}
+            onChange={(event) => onWindowChange(Number(event.target.value))}
             className="bg-recessed border border-line rounded px-2 py-1.5 text-[12px] text-ink focus-visible:outline focus-visible:outline-accent"
           >
             {WINDOWS.map((days) => (
