@@ -18,11 +18,11 @@ Diverifikasi ulang pada 19 November 2026 dengan perintah nyata.
 ```text
 $ cd backend
 $ uv run python -m pytest -q
-150 passed, 78 warnings in 155.42s (0:02:35)
+160 passed, 88 warnings in 160.62s (0:02:40)
 ```
 
 Tidak ada test yang gagal. (PowerShell menampilkan status pipeline non-nol
-karena pytest menulis warning ke stderr; ringkasan pytest tetap `150 passed`.)
+karena pytest menulis warning ke stderr; ringkasan pytest tetap `160 passed`.)
 
 ### 1.2 Build frontend
 
@@ -48,18 +48,20 @@ Build berhasil.
 ```text
 $ cd backend
 $ uv run alembic history
-3374e73084c0 -> a41c2e9f7b30 (head), portfolio domain tables (Stage A, schema-spec §5)
+a41c2e9f7b30 -> dcadf6176257 (head), add_performance_and_allocation_results
+3374e73084c0 -> a41c2e9f7b30, portfolio domain tables (Stage A, schema-spec §5)
 <base> -> 3374e73084c0, initial vertical slice schema
 
 $ uv run alembic current
-a41c2e9f7b30 (head)
+dcadf6176257 (head)
 ```
 
-Jumlah tabel di schema `public`: **20** (19 tabel domain + `alembic_version`).
+Jumlah tabel di schema `public`: **22** (21 tabel domain + `alembic_version`).
 
 Tabel domain:
 
 ```text
+allocation_results
 analytics_runs
 assets
 cash_ledger
@@ -68,6 +70,7 @@ holdings
 market_candles
 market_regime_results
 markets
+performance_results
 portfolio_snapshots
 portfolios
 provider_instruments
@@ -80,8 +83,6 @@ scanner_runs
 technical_results
 transactions
 ```
-
-Tidak ada tabel `performance_results` atau `allocation_results`.
 
 ---
 
@@ -169,7 +170,7 @@ Tidak ada tabel `performance_results` atau `allocation_results`.
 - Beta, benchmark, dan HHI.
 - Penjadwalan snapshot otomatis.
 - Multi-currency dan konversi FX.
-- Persistensi hasil performance/risk/allocation tingkat portfolio.
+- Penjadwalan otomatis analytics (persistensi masih dipicu manual).
 - Provider US stocks dan IDX (modul masih kosong).
 - Jalur LLM nyata yang tervalidasi end-to-end di environment ini.
 - Docker-based setup yang terverifikasi di mesin ini.
@@ -180,15 +181,18 @@ Tidak ada tabel `performance_results` atau `allocation_results`.
 
 - Migration dijalankan otomatis saat backend start (`run_migrations()` di
   `backend/app/main.py`).
-- Migration terakhir: `a41c2e9f7b30` (`portfolio domain tables`, Stage A).
-- Migration sebelumnya: `3374e73084c0` (`initial vertical slice schema`).
-- Stage O (WebSocket market feed) dan Stage P (dokumentasi) tidak mengubah
-  schema.
-- Persistensi analytics yang ada hanya untuk level instrumen:
-  `analytics_runs`, `technical_results`, `market_regime_results`, dan
-  `risk_results` ditulis oleh engine runner instrumen.
-- Hasil performance, risk, dan allocation tingkat portfolio dihitung saat
-  diminta (read-only) dan tidak disimpan.
+- Migration terakhir: `dcadf6176257` (`add_performance_and_allocation_results`,
+  Stage Q/R) — membuat `performance_results` dan `allocation_results`.
+- Migration sebelumnya: `a41c2e9f7b30` (`portfolio domain tables`, Stage A),
+  lalu `3374e73084c0` (`initial vertical slice schema`).
+- Persistensi analytics level instrumen (runner): `analytics_runs`,
+  `technical_results`, `market_regime_results`, `risk_results`.
+- Persistensi analytics level portfolio (Stage Q/R, manual): `analytics_runs`
+  (induk) + `performance_results` / `risk_results` / `allocation_results`.
+  Kolom `risk_results` tidak diubah; metadata metodologi disimpan di
+  `result_metadata` JSONB (§7.3).
+- Endpoint additive: `POST /portfolios/{id}/analytics/runs`,
+  `GET /portfolios/{id}/analytics/runs`, `GET /portfolios/{id}/analytics/runs/{run_id}`.
 - `backend/uv.lock` masih untracked; keputusan commit/gitignore belum diambil.
 
 ---

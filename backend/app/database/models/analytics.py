@@ -86,3 +86,51 @@ class RiskResult(Base):
     confidence_level: Mapped[float | None] = mapped_column(Numeric(10, 8), nullable=True)
     risk_classification: Mapped[str | None] = mapped_column(String(30), nullable=True)
     result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class PerformanceResult(Base):
+    __tablename__ = "performance_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False
+    )
+    portfolio_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("portfolios.id"), nullable=False
+    )
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    total_return: Mapped[float | None] = mapped_column(
+        Numeric(20, 10), nullable=True
+    )
+    daily_return: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
+    realized_pnl: Mapped[float | None] = mapped_column(
+        Numeric(30, 12), nullable=True
+    )
+    unrealized_pnl: Mapped[float | None] = mapped_column(
+        Numeric(30, 12), nullable=True
+    )
+    cagr: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
+    reporting_currency: Mapped[str] = mapped_column(String(10), nullable=False)
+    methodology: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class AllocationResult(Base):
+    __tablename__ = "allocation_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False
+    )
+    portfolio_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("portfolios.id"), nullable=False
+    )
+    allocation_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    allocation_key: Mapped[str] = mapped_column(String(150), nullable=False)
+    market_value: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    allocation_percentage: Mapped[float | None] = mapped_column(
+        Numeric(20, 10), nullable=True
+    )
+    reporting_currency: Mapped[str] = mapped_column(String(10), nullable=False)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

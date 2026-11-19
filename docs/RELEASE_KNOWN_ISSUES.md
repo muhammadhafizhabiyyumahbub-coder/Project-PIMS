@@ -31,12 +31,18 @@ sistem pada tahap Release Candidate V1.
 - **Dampak:** Analisis konsentrasi terbatas pada Top-N; analisis risiko berfokus pada statistik portofolio internal tanpa perbandingan pasar relatif.
 - **Rencana penanganan:** Tambahkan data series benchmark dan spesifikasi HHI/beta pada fase analitis berikutnya.
 
-### 1.4 Hasil analitis tingkat portfolio tidak dipersistensikan
+### 1.4 Persistensi analitis level portfolio dipicu manual (tidak terjadwal)
 - **Level:** Medium
 - **Modul:** Analytics Persistence
-- **Deskripsi:** Hasil perhitungan performance, risiko portfolio, dan alokasi dihitung secara dinamis saat diminta HTTP request.
-- **Dampak:** Tidak ada tabel `performance_results` atau `allocation_results`. Tabel `risk_results` dan `analytics_runs` yang ada di database hanya menyimpan output runner analitis tingkat **instrumen** (teknikal, market regime, risiko instrumen).
-- **Rencana penanganan:** Tambahkan skema dan repositori persistensi analitis tingkat portfolio jika histori analitis perlu disimpan secara permanen.
+- **Deskripsi:** Hasil performance/risk/allocation dapat disimpan secara eksplisit
+  lewat `POST /portfolios/{id}/analytics/runs` (`analytics_runs` sebagai induk +
+  `performance_results` / `risk_results` / `allocation_results` dengan FK).
+  **Tidak ada penjadwalan otomatis** (scheduler ditunda).
+- **Dampak:** Histori analisis tidak tersimpan otomatis; pengguna harus memanggil
+  endpoint setelah transaksi baru atau window risiko berubah. `risk_results`
+  tetap menyimpan metodologi di `result_metadata` JSONB (kolomnya tidak diubah).
+- **Rencana penanganan:** Tambahkan worker/cron terpisah untuk otomatisasi
+  analisis berkala.
 
 ### 1.5 Penjadwalan snapshot portfolio masih manual
 - **Level:** Medium

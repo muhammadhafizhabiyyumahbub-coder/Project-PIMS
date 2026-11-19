@@ -9,8 +9,10 @@ from app.database.models.portfolio import (
     Transaction,
 )
 from app.database.models.analytics import (
+    AllocationResult,
     AnalyticsRun,
     MarketRegimeResult,
+    PerformanceResult,
     RiskResult,
     TechnicalResult,
 )
@@ -27,6 +29,8 @@ __all__ = [
     "TechnicalResult",
     "MarketRegimeResult",
     "RiskResult",
+    "PerformanceResult",
+    "AllocationResult",
     "ScannerRun",
     "ScannerResult",
     "ResearchRequest",

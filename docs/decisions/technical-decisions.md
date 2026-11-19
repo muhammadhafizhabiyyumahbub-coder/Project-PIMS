@@ -667,6 +667,22 @@ Implementasi: `backend/app/engines/portfolio/cost_basis.py`.
 7. **Semua perhitungan Decimal**, tidak ada float; output sebagai decimal string skala 12 desimal.
 8. **Endpoint read-only `GET /portfolios/{id}/risk?window=`** (default 90 hari), envelope standar. Tidak ada persistence ke `analytics_runs`/`risk_results` ronde ini.
 
+# 7.12 Analytics Persistence Decisions (Stage Q/R)
+
+**Status:** APPROVED (2026-11-19, Project Owner).
+
+1. **Penyimpanan dipicu manual**, sama pola dengan snapshot. Setiap panggilan `POST /portfolios/{id}/analytics/runs` menghitung lalu menyimpan; tidak ada penjadwalan otomatis (scheduler tetap ditunda).
+2. **Satu penyimpanan = satu baris `analytics_runs` sebagai induk** (mencatat `engine_type`, periode/window, `started_at`/`completed_at`, `calculation_version`, dan `input_metadata`), lalu hasilnya ditulis ke tabel hasil yang sesuai dengan FK `analytics_run_id`.
+3. **Metadata metodologi wajib disimpan** agar hasil bisa ditafsirkan ulang:
+   - risk → `method`, `weight_base`, `risk_free_rate`, `annualization`/`annualization_factor`, `return_count`, `price_source`, `data_status` + alasan, seluruh `metrics` & `metric_reasons` di `risk_results.result_metadata` (JSONB).
+   - performance → `methodology = "time_weighted_return"`, `return_status`, alasan TWR/CAGR, `sub_period_count`, `period_days` di `performance_results.result_metadata`.
+   - allocation → `weight_base`, `coverage`, `data_status` di tiap baris `allocation_results.result_metadata`; ringkasan (total/cash/invested, coverage, concentration) di `analytics_runs.input_metadata`.
+4. **Hasil UNAVAILABLE / `null` disimpan apa adanya sebagai NULL**, bukan 0, dan statusnya dicatat di `result_metadata` (`return_status` / `data_status`) beserta alasan.
+5. **Presisi mengikuti kolom spec** (`NUMERIC`); kode memakai Decimal; API mengeluarkan string desimal (skala engine: return 12 desimal, weight 10 desimal). Tidak ada float di JSON.
+6. **Tabel baru** `performance_results` (schema-spec §7.2) dan `allocation_results` (§7.4) dibuat lewat migration `dcadf6176257`. **Kolom `risk_results` tidak diubah**; metadata metodologi memakai kolom `result_metadata` JSONB yang sudah ada (sesuai §7.3 yang memang mensyaratkan metadata metodologi).
+7. **Endpoint additive:** `POST /portfolios/{id}/analytics/runs` (201, body `analysis_type` = performance/risk/allocation + `window_days`/`start`/`end`), `GET /portfolios/{id}/analytics/runs` (urut waktu turun, `limit` + cursor), `GET /portfolios/{id}/analytics/runs/{run_id}` (detail + hasil tersimpan). 422 untuk jenis analisis tak dikenal, 404 untuk run tak ada / beda portfolio.
+8. **Volume `allocation_results`**: satu baris per slice pada dimensi ASSET_CLASS, MARKET, CURRENCY, ASSET, dan CASH. Sektor tidak ditulis (metadata sektor belum ada). `market_value`/`allocation_percentage` yang tidak tersedia disimpan NULL.
+
 # 8. Market Scanner Decisions
 
 ## 8.1 Independent Scanner Engine
