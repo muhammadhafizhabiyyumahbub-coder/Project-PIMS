@@ -13,6 +13,11 @@ atau sudah dirilis.
 
 Diverifikasi ulang pada 19 November 2026 dengan perintah nyata.
 
+Dependency backend dikunci di `backend/uv.lock` (disetujui Project Owner,
+hanya merujuk `pypi.org` / `files.pythonhosted.org`, tanpa kredensial). Pasang
+persis versi terkunci dengan `uv sync --frozen` sebelum menjalankan perintah
+`uv run ...` di bawah.
+
 ### 1.1 Test backend
 
 ```text

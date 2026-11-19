@@ -68,6 +68,17 @@ manual untuk pemakaian normal.
 
 ### 3.2 Backend
 
+Sinkronkan dependency terkunci lebih dulu (sekali setelah clone, dan setiap kali
+`uv.lock` berubah). `--frozen` memaksa pakai versi persis di lock, tanpa
+memutakhirkan apa pun:
+
+```bash
+cd backend
+uv sync --frozen
+```
+
+Jalankan backend:
+
 ```bash
 cd backend
 uv run uvicorn app.main:app --port 8000
