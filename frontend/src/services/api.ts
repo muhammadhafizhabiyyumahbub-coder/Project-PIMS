@@ -10,6 +10,7 @@ import type {
   Portfolio,
   PortfolioAllocation,
   PortfolioPerformance,
+  PortfolioRisk,
   PortfolioSnapshot,
   ResearchJob,
   ResearchReport,
@@ -219,6 +220,14 @@ export function getPerformance(
 export function getAllocation(portfolioId: string): Promise<Envelope<PortfolioAllocation>> {
   return request<PortfolioAllocation>(
     `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/allocation`,
+  );
+}
+
+/** Risk window is the only knob; the backend decides the measured period and
+ * returns UNAVAILABLE + reason when the stored candles cannot support it. */
+export function getRisk(portfolioId: string, windowDays: number): Promise<Envelope<PortfolioRisk>> {
+  return request<PortfolioRisk>(
+    `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/risk?window=${windowDays}`,
   );
 }
 

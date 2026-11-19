@@ -10,6 +10,7 @@ import type { AssetSummary, Holding, Portfolio, PortfolioSnapshot, Transaction, 
 import AssetPicker from "./AssetPicker";
 import PerformancePanel from "./PerformancePanel";
 import AllocationPanel from "./AllocationPanel";
+import RiskPanel from "./RiskPanel";
 
 const TRANSACTION_TYPES = ["DEPOSIT", "WITHDRAWAL", "BUY", "SELL"] as const;
 const ASSET_TYPES: readonly string[] = ["BUY", "SELL"];
@@ -106,6 +107,7 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
       <ValuationSummary valuation={valuation} />
       <AllocationPanel portfolioId={portfolioId} />
       <PerformancePanel portfolioId={portfolioId} />
+      <RiskPanel portfolioId={portfolioId} />
       <SnapshotHistory portfolioId={portfolioId} />
       <HoldingsTable holdings={holdings} statusReason={STATUS_REASONS[valuation.valuation_status]} />
       <TransactionForm portfolioId={portfolioId} currency={portfolio.base_currency} onRecorded={() => setReloadKey((k) => k + 1)} />

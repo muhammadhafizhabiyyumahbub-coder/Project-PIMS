@@ -298,6 +298,52 @@ export interface PortfolioAllocation {
   concentration: AllocationConcentration;
 }
 
+// --- Portfolio risk (technical-decisions §7.11, Stage L) ---------------------
+// Metric values are decimal fractions as strings ("-0.034" = -3.4%), and so is
+// risk_free_rate. A null metric means UNAVAILABLE with the reason in
+// metric_reasons; the UI never renders null as 0 and never computes a metric.
+// method is current_weights_buy_and_hold_approximation: a proxy from today's
+// composition, not realized historical performance.
+
+export interface RiskHolding {
+  asset_id: string;
+  symbol: string;
+  /** Already a percentage string, as in the allocation endpoint. */
+  weight: string | null;
+}
+
+export interface RiskMetrics {
+  volatility: string | null;
+  annualized_volatility: string | null;
+  max_drawdown: string | null;
+  sharpe: string | null;
+  sortino: string | null;
+  var_95: string | null;
+  var_99: string | null;
+  cvar_95: string | null;
+  cvar_99: string | null;
+}
+
+export interface PortfolioRisk {
+  portfolio_id: string;
+  reporting_currency: string;
+  window_days: number;
+  observation_start: string | null;
+  observation_end: string | null;
+  return_count: number;
+  method: string;
+  weight_base: string;
+  annualization: string;
+  annualization_factor: number;
+  risk_free_rate: string | null;
+  data_status: string;
+  data_status_reason: string | null;
+  price_source: string;
+  metrics: RiskMetrics;
+  metric_reasons: Record<string, string>;
+  holdings: RiskHolding[];
+}
+
 // --- Asset summary (api-spec §11) -------------------------------------------
 // id and symbol are internal identity; provider symbols are never surfaced here.
 
