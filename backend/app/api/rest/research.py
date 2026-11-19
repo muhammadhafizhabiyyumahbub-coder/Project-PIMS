@@ -1,5 +1,8 @@
-"Research endpoints: manual trigger, job status, reports."
-from fastapi import APIRouter, Depends
+"Research endpoints: manual trigger, job status, reports, history, delete."
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -105,3 +108,75 @@ def get_research_report(report_id: str, db: Session = Depends(get_db)):
             "report_content": report.report_content,
         }
     )
+
+
+def _report_summary(db: Session, report: ResearchReport) -> dict:
+    request = db.get(ResearchRequest, report.request_id)
+    asset = db.get(Asset, request.asset_id) if request and request.asset_id else None
+    return {
+        "report_id": str(report.id),
+        "request_id": str(report.request_id),
+        "title": report.title,
+        "research_type": report.research_type,
+        "request_summary": report.request_summary,
+        "asset": {"id": str(asset.id), "symbol": asset.symbol} if asset else None,
+        "provider": report.ai_provider,
+        "model": report.model_identifier,
+        "execution_status": report.execution_status,
+        "generated_at": report.generated_at.isoformat() if report.generated_at else None,
+        "created_at": report.created_at.isoformat(),
+    }
+
+
+@router.get("")
+def list_research(
+    limit: int = Query(20, ge=1, le=100),
+    cursor: str | None = Query(
+        None, description="ISO-8601 created_at of the last item of the previous page"
+    ),
+    db: Session = Depends(get_db),
+):
+    """Research report history, newest first (api-spec §18.1).
+
+    Cursor pagination on created_at: pass the `meta.next_cursor` of the previous
+    page. Empty history is a 200 with an empty list, never an error.
+    """
+    query = db.query(ResearchReport).order_by(ResearchReport.created_at.desc(), ResearchReport.id.desc())
+    if cursor:
+        try:
+            after = datetime.fromisoformat(cursor.replace("Z", "+00:00"))
+        except ValueError:
+            return error_response("VALIDATION_ERROR", "cursor must be ISO-8601", 422)
+        query = query.filter(ResearchReport.created_at < after)
+    reports = query.limit(limit + 1).all()
+    has_more = len(reports) > limit
+    reports = reports[:limit]
+    next_cursor = reports[-1].created_at.isoformat() if has_more and reports else None
+    return success_response(
+        [_report_summary(db, r) for r in reports],
+        meta={"count": len(reports), "limit": limit, "has_more": has_more, "next_cursor": next_cursor},
+    )
+
+
+@router.delete("/{report_id}")
+def delete_research_report(report_id: str, db: Session = Depends(get_db)):
+    """Delete one research report (api-spec §18.1).
+
+    Only the report row is removed. The originating request and job stay: the
+    spec defines deletion of a report, not of its request history. Job references
+    are detached first so the FK does not block the delete.
+    """
+    try:
+        rid = uuid.UUID(report_id)
+    except (ValueError, AttributeError):
+        return error_response("NOT_FOUND", f"report {report_id} not found", 404)
+    report = db.get(ResearchReport, rid)
+    if report is None:
+        return error_response("NOT_FOUND", f"report {report_id} not found", 404)
+
+    jobs = db.query(ResearchJob).filter_by(report_id=rid).all()
+    for job in jobs:
+        job.report_id = None
+    db.delete(report)
+    db.commit()
+    return success_response({"report_id": str(rid), "deleted": True})

@@ -683,6 +683,36 @@ Implementasi: `backend/app/engines/portfolio/cost_basis.py`.
 7. **Endpoint additive:** `POST /portfolios/{id}/analytics/runs` (201, body `analysis_type` = performance/risk/allocation + `window_days`/`start`/`end`), `GET /portfolios/{id}/analytics/runs` (urut waktu turun, `limit` + cursor), `GET /portfolios/{id}/analytics/runs/{run_id}` (detail + hasil tersimpan). 422 untuk jenis analisis tak dikenal, 404 untuk run tak ada / beda portfolio.
 8. **Volume `allocation_results`**: satu baris per slice pada dimensi ASSET_CLASS, MARKET, CURRENCY, ASSET, dan CASH. Sektor tidak ditulis (metadata sektor belum ada). `market_value`/`allocation_percentage` yang tidak tersedia disimpan NULL.
 
+# 7.13 Read-Only Endpoint Decisions (Stage U)
+
+**Status:** PROPOSED (2026-11-20) — asumsi bentuk response; menunggu review Project Owner. Tidak ada perubahan schema, migration, engine, atau dependency.
+
+Semua endpoint di bawah hanya membaca tabel yang sudah ada dan tidak menghitung ulang engine dengan metodologi lain (api-spec §14.3).
+
+1. **`session` market diturunkan dari `markets.market_type` saja.**
+   - `CRYPTO` → `CONTINUOUS`. Tipe lain → `UNKNOWN` + alasan, karena tidak ada jadwal sesi tersimpan. Melaporkan `OPEN`/`CLOSED` akan menjadi tebakan.
+
+2. **`data_availability` pasar memakai kebijakan freshness yang sudah ada** (`data/validation/freshness.py`) atas candle terbaru di pasar tersebut. Tanpa candle → `UNAVAILABLE` + alasan. Ini bukan klaim status koneksi provider (api-spec §12: status market ≠ status provider).
+
+3. **`GET /markets/{market_id}` menerima UUID atau `markets.code`.** `exchanges` = kode `data_providers` yang dipetakan ke instrumen pasar lewat `provider_instruments`; identitas instrumen tetap `assets.id`.
+
+4. **`GET /dashboard/overview` tidak mengembalikan `total_return`/`daily_pnl`.**
+   - Kedua angka itu milik run performance tersimpan. Menghitungnya ulang di dashboard berarti metodologi kedua (dilarang api-spec §14.3). Field dikirim `null`.
+   - `allocation` dikelompokkan dari posisi valuation yang sama (dimensi ASSET_CLASS) supaya tidak ada valuasi kedua.
+   - `risk_summary` = hasil `risk_results` terakhir yang `COMPLETED`; `null` bila portfolio belum pernah dianalisis (bukan `{}` dan bukan nol).
+
+5. **`analytics_runs` tidak punya kolom `portfolio_id`; tautan portfolio ada di `input_metadata.portfolio_id` (Stage Q/R).** Dashboard memfilter lewat JSONB `astext`, bukan kolom baru.
+
+6. **`GET /research` memakai cursor pada `created_at`** (`meta.next_cursor`), urut terbaru dulu, `limit` default 20 (maks 100). Cursor non-ISO → 422. Riwayat kosong → 200 + list kosong.
+
+7. **`DELETE /research/{report_id}` hanya menghapus baris laporan.** `research_requests` dan `research_jobs` tetap disimpan (spec §18.1 menyebut hapus report, bukan riwayat request). FK `research_jobs.report_id` dilepas lebih dulu agar delete tidak gagal; job yang menunjuk report tersebut menjadi `report_id = null`.
+
+8. **`GET /scanner/categories` mengembalikan 8 kategori api-spec §16.2** sebagai daftar statis; kategorisasi per run belum disimpan di `scanner_runs` (tidak ada kolom `category`), jadi endpoint `results` tidak memfilter kategori.
+
+9. **`GET /dashboard/market-overview` top movers** dihitung dari 25 candle 1h terakhir (perubahan 24 jam) memakai candle tersimpan; instrumen dengan candle < 25 dilewati, bukan diisi nol.
+
+10. **`GET /dashboard/activity` default 20 baris (maks 100)**, urut `transaction_date` turun, filter `portfolio_id` opsional; portfolio tak dikenal → 404.
+
 # 8. Market Scanner Decisions
 
 ## 8.1 Independent Scanner Engine
