@@ -11,7 +11,7 @@
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
 | Commit terakhir | `354b768` (roadmap) | `git log --oneline -1` |
-| Backend test | **189 passed, 0 failed** | `pytest -q` (PostgreSQL 17 lokal) |
+| Backend test | **190 passed, 0 failed** | `pytest -q` (PostgreSQL 17 lokal) |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
 | Migration head | `dcadf6176257` | `alembic current` |
 | Endpoint terpasang | 46 operasi (40 path) dari 54 di `api-spec.md` | openapi vs spec diff |
@@ -30,8 +30,8 @@
 | ID | Tujuan | Prioritas | Status | File | Review |
 |---|---|---|---|---|---|
 | U | 16 endpoint read-only (dashboard 5, markets 3, candles/asset, research list+delete, scanner 3) | P1 | **SELESAI** `e07956e` (pushed) — suite 189 passed | router API + test baru | lulus: 189 passed, 40 path/46 operasi |
-| X | Index `market_candles(asset_id,timeframe,open_time)` + hilangkan N+1 di holdings/valuation/allocation + ukur sebelum/sesudah | P1 | **in progress** | migration + engine | pending |
-| V | Migration `market_quotes`, `fx_rates`, `scanner_configurations` (§6.1/§6.4/§8.1) + endpoint quote & CRUD config | P2 | planned | migration, models, API | — |
+| X | Index `market_candles(asset_id,timeframe,open_time)` + hilangkan N+1 di holdings/valuation/allocation + ukur sebelum/sesudah | P1 | **SELESAI** `5516a29`+`b4b0cdf`+`420603b` (pushed) — suite 190 passed; index terjustifikasi di `technical-decisions §7.14` | migration `2462e115ce2f`, repo batch, `test_query_budget.py` | lulus: 190 passed, query konstan 10 vs 30 posisi |
+| V | Migration `market_quotes`, `fx_rates`, `scanner_configurations` (§6.1/§6.4/§8.1) + endpoint quote & CRUD config | P2 | **in progress** | migration, models, repositories, API | pending |
 | W | Analytics instrument-scope + **watchlists** (butuh keputusan: tabel tidak ada di schema-spec) | P2/P3 | blocked (keputusan owner) | — | — |
 | Y | Sinkronisasi dokumen tiap tahap + laporan test rilis | P1 | planned | docs | — |
 | Z | Docker dev environment | P3 | **ditunda owner** (butuh reboot fisik + WSL2) | — | — |
