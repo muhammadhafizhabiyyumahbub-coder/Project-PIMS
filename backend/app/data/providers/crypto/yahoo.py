@@ -20,6 +20,14 @@ class YahooProvider:
         self._client = httpx.Client(transport=transport)
 
     def fetch_klines(self, instrument: str, timeframe: str, limit: int) -> list[RawKline]:
+        """Backwards-compatible contract: candles only (see base.py)."""
+        klines, _currency = self.fetch_klines_with_meta(instrument, timeframe, limit)
+        return klines
+
+    def fetch_klines_with_meta(
+        self, instrument: str, timeframe: str, limit: int
+    ) -> tuple[list[RawKline], str]:
+        """Candles plus the currency the provider reported (USD for Yahoo crypto)."""
         interval, bar_seconds = self._timeframe(timeframe)
         # Request enough history for `limit` candles, then trim.
         range_needed = self._range_for(limit, bar_seconds)
@@ -35,6 +43,8 @@ class YahooProvider:
         if error:
             raise RuntimeError(f"Yahoo API error: {error.get('description') or error.get('code')}")
         result = payload["chart"]["result"][0]
+        meta = result.get("meta", {})
+        currency = meta.get("currency", "USD")
         timestamps = result.get("timestamp") or []
         quote = result["indicators"]["quote"][0]
         klines: list[RawKline] = []
@@ -62,7 +72,7 @@ class YahooProvider:
                     quote_volume=None,
                 )
             )
-        return klines[-limit:]
+        return klines[-limit:], currency
 
     @staticmethod
     def _timeframe(timeframe: str) -> tuple[str, int]:

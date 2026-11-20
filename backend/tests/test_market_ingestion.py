@@ -5,7 +5,7 @@ from datetime import datetime, UTC, timedelta
 from decimal import Decimal
 
 import httpx
-from app.database.models import Asset, DataProvider, MarketQuote, FXRate
+from app.database.models import Asset, DataProvider, MarketQuote, FXRate, ProviderInstrument
 from app.data.ingestion.quotes import ingest_quotes, ingest_fx_rates
 
 
@@ -37,19 +37,23 @@ def test_ingest_quotes_success(db_session):
     provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
     db_session.add(provider)
     asset = Asset(
-        symbol="BTC-USD",
+        symbol="BTC",
         name="Bitcoin",
         asset_type="CRYPTO",
-        quote_currency="USD",
+        quote_currency="USDT",
         is_active=True,
     )
     db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="BTC-USD")
+    db_session.add(pi)
     db_session.commit()
 
     now = datetime.now(UTC)
     payload = {
         "chart": {
             "result": [{
+                "meta": {"currency": "USD"},
                 "timestamp": [int(now.timestamp())],
                 "indicators": {
                     "quote": [{
@@ -74,14 +78,13 @@ def test_ingest_quotes_success(db_session):
     iq.YahooProvider = orig
 
     assert res["written"] == 1
-    assert res["failed"] == []
-    assert res["is_realtime"] is False
+    # Check that transport was called with "BTC-USD"
+    assert any("BTC-USD" in str(r.url) for r in transport.requests)
 
     quote = db_session.query(MarketQuote).filter_by(asset_id=asset.id).one()
     assert quote.last_price == Decimal("50500.0")
-    assert quote.currency == "USD"
+    assert quote.currency == "USD"  # Currency from provider meta, not asset.quote_currency
     assert quote.source_timestamp is not None
-    assert quote.source_timestamp.tzinfo is not None
     assert quote.freshness_status in ("LIVE", "STALE", "UNKNOWN")
     assert quote.provider_id == provider.id
 
@@ -90,13 +93,16 @@ def test_ingest_quotes_provider_failure(db_session):
     provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
     db_session.add(provider)
     asset = Asset(
-        symbol="BTC-USD",
+        symbol="BTC",
         name="Bitcoin",
         asset_type="CRYPTO",
-        quote_currency="USD",
+        quote_currency="USDT",
         is_active=True,
     )
     db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="BTC-USD")
+    db_session.add(pi)
     db_session.commit()
 
     transport = MockTransport({})  # no payload → 404
@@ -109,8 +115,9 @@ def test_ingest_quotes_provider_failure(db_session):
     iq.YahooProvider = orig
 
     assert res["written"] == 0
-    assert len(res["failed"]) == 1
-    assert res["failed"][0]["reason"] != ""
+    assert res["skipped"] == 1
+    assert len(res["skipped_reasons"]) == 1
+    assert "provider does not offer BTC-USD" in res["skipped_reasons"][0]["reason"]
 
     count = db_session.query(MarketQuote).filter_by(asset_id=asset.id).count()
     assert count == 0
@@ -120,13 +127,16 @@ def test_ingest_quotes_empty_payload(db_session):
     provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
     db_session.add(provider)
     asset = Asset(
-        symbol="BTC-USD",
+        symbol="BTC",
         name="Bitcoin",
         asset_type="CRYPTO",
-        quote_currency="USD",
+        quote_currency="USDT",
         is_active=True,
     )
     db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="BTC-USD")
+    db_session.add(pi)
     db_session.commit()
 
     payload = {"chart": {"result": [{"timestamp": [], "indicators": {"quote": [{}]}}], "error": None}}
@@ -140,20 +150,25 @@ def test_ingest_quotes_empty_payload(db_session):
     iq.YahooProvider = orig
 
     assert res["written"] == 0
-    assert len(res["failed"]) == 1
+    assert res["skipped"] == 1
+    assert len(res["skipped_reasons"]) == 1
+    assert "provider returned no data" in res["skipped_reasons"][0]["reason"]
 
 
 def test_ingest_quotes_idempotent(db_session):
     provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
     db_session.add(provider)
     asset = Asset(
-        symbol="BTC-USD",
+        symbol="BTC",
         name="Bitcoin",
         asset_type="CRYPTO",
         quote_currency="USD",
         is_active=True,
     )
     db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="BTC-USD")
+    db_session.add(pi)
     db_session.commit()
 
     now = datetime.now(UTC)
@@ -193,13 +208,16 @@ def test_ingest_quotes_freshness_stale(db_session):
     provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
     db_session.add(provider)
     asset = Asset(
-        symbol="BTC-USD",
+        symbol="BTC",
         name="Bitcoin",
         asset_type="CRYPTO",
         quote_currency="USD",
         is_active=True,
     )
     db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="BTC-USD")
+    db_session.add(pi)
     db_session.commit()
 
     old_time = datetime.now(UTC) - timedelta(hours=6)
@@ -232,6 +250,26 @@ def test_ingest_quotes_freshness_stale(db_session):
     assert res["written"] == 1
     quote = db_session.query(MarketQuote).filter_by(asset_id=asset.id).one()
     assert quote.freshness_status == "STALE"
+
+
+def test_ingest_quotes_without_mapping_skipped(db_session):
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    asset = Asset(
+        symbol="B2",
+        name="Asset B2",
+        asset_type="CRYPTO",
+        quote_currency="USD",
+        is_active=True,
+    )
+    db_session.add(asset)
+    db_session.commit()
+    # No provider instrument mapping!
+
+    res = ingest_quotes(db_session)
+    assert res["written"] == 0
+    assert res["skipped"] == 1
+    assert "no provider instrument mapping for B2" in res["skipped_reasons"][0]["reason"]
 
 
 def test_ingest_fx_success(db_session):

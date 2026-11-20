@@ -7,9 +7,10 @@ from decimal import Decimal
 
 from httpx import HTTPStatusError
 from sqlalchemy.orm import Session
+from httpx import HTTPStatusError
 
 from app.core.db import get_session_factory
-from app.database.models import Asset, DataProvider
+from app.database.models import Asset, DataProvider, ProviderInstrument
 from app.database.repositories.market import upsert_quote, upsert_fx_rate
 from app.data.providers.crypto.yahoo import YahooProvider
 from app.data.validation.freshness import freshness_status
@@ -30,23 +31,49 @@ def ingest_quotes(
         session.add(provider)
         session.commit()
 
-    query = session.query(Asset).filter_by(is_active=True, asset_type="CRYPTO")
+    query = (
+        session.query(Asset, ProviderInstrument)
+        .join(ProviderInstrument, Asset.id == ProviderInstrument.asset_id)
+        .filter(
+            Asset.is_active == True,
+            Asset.asset_type == "CRYPTO",
+            ProviderInstrument.provider_id == provider.id,
+            ProviderInstrument.is_active == True,
+        )
+    )
     if asset_ids:
         query = query.filter(Asset.id.in_(asset_ids))
-    assets = query.all()
+    results = query.all()
 
-    requested = len(assets)
+    # Also identify skipped ones
+    all_active_crypto = session.query(Asset).filter_by(is_active=True, asset_type="CRYPTO").all()
+    requested_ids = {a.id for a in all_active_crypto}
+    processed_ids = {a.id for a, pi in results}
+    
+    skipped_count = 0
+    skipped_reasons: list = []
+    for asset in all_active_crypto:
+        if asset.id not in processed_ids:
+            skipped_count += 1
+            skipped_reasons.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": f"no provider instrument mapping for {asset.symbol}"})
+
     written = 0
-    skipped = 0
     failed = []
 
     yahoo = YahooProvider()
 
-    for asset in assets:
+    for asset, pi in results:
         try:
-            klines = yahoo.fetch_klines(asset.symbol, feed_timeframe, limit=1)
+            klines, currency = yahoo.fetch_klines_with_meta(pi.provider_symbol, feed_timeframe, limit=1)
             if not klines:
-                failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": "empty payload"})
+                skipped_count += 1
+                skipped_reasons.append(
+                    {
+                        "asset_id": str(asset.id),
+                        "symbol": asset.symbol,
+                        "reason": f"provider returned no data for {pi.provider_symbol}",
+                    }
+                )
                 continue
             latest = klines[-1]
             price = Decimal(str(latest.close_price))
@@ -58,30 +85,46 @@ def ingest_quotes(
             now = datetime.now(UTC)
             feed_stat = freshness_status(source_ts, now, feed_timeframe)
 
+            # NOTE: Currency sourced from provider metadata, fallback to asset.quote_currency
+            final_currency = currency or asset.quote_currency or "USD"
+
             upsert_quote(
                 session,
                 asset_id=asset.id,
                 provider_id=provider.id,
                 price=price,
-                currency=asset.quote_currency or "USD",
+                currency=final_currency,
                 source_timestamp=source_ts,
                 received_at=now,
                 is_realtime=False,
                 feed_status=feed_stat,
             )
             written += 1
+        except HTTPStatusError as e:
+            if e.response.status_code == 404:
+                skipped_count += 1
+                skipped_reasons.append(
+                    {
+                        "asset_id": str(asset.id),
+                        "symbol": asset.symbol,
+                        "reason": f"provider does not offer {pi.provider_symbol}",
+                    }
+                )
+            else:
+                logger.error(f"Provider error for {asset.symbol}: {e}")
+                failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": str(e)})
         except (ValueError, RuntimeError) as e:
-            logger.error(f"Provider error for {asset.symbol}: {e}")
             failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": str(e)})
         except Exception as e:
             logger.exception(f"Unexpected error for {asset.symbol}")
-            failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": "unexpected error"})
+            failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": str(e)})
 
     session.commit()
     return {
-        "requested": requested,
+        "requested": len(all_active_crypto),
         "written": written,
-        "skipped": skipped,
+        "skipped": skipped_count,
+        "skipped_reasons": skipped_reasons,
         "failed": failed,
         "provider": code,
         "is_realtime": False,
@@ -103,7 +146,7 @@ def ingest_fx_rates(
 
     requested = len(pairs)
     written = 0
-    skipped = 0
+    skipped_count = 0
     skipped_reasons: list = []
     failed = []
 
@@ -113,9 +156,9 @@ def ingest_fx_rates(
         # Yahoo symbol for USD/IDR is USDIDR=X
         symbol = f"{base}{quote}=X"
         try:
-            klines = yahoo.fetch_klines(symbol, feed_timeframe, limit=1)
+            klines, currency = yahoo.fetch_klines_with_meta(symbol, feed_timeframe, limit=1)
             if not klines:
-                skipped += 1
+                skipped_count += 1
                 skipped_reasons.append(
                     {
                         "pair": f"{base}/{quote}",
@@ -145,10 +188,8 @@ def ingest_fx_rates(
             )
             written += 1
         except HTTPStatusError as e:
-            # 404 means the provider has no data for this pair/direction — we do
-            # NOT invert the rate, we report it as skipped with a reason.
             if e.response.status_code == 404:
-                skipped += 1
+                skipped_count += 1
                 skipped_reasons.append(
                     {
                         "pair": f"{base}/{quote}",
@@ -160,12 +201,12 @@ def ingest_fx_rates(
                 failed.append({"pair": f"{base}/{quote}", "reason": str(e)})
         except Exception as e:
             logger.exception(f"Unexpected error for {base}/{quote}")
-            failed.append({"pair": f"{base}/{quote}", "reason": str(e)})
+            failed.append({"pair": f"{base}/{quote}", "reason": "unexpected error"})
 
     return {
         "requested": requested,
         "written": written,
-        "skipped": skipped,
+        "skipped": skipped_count,
         "skipped_reasons": skipped_reasons,
         "failed": failed,
         "provider": code,
