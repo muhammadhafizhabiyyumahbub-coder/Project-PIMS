@@ -713,6 +713,43 @@ Semua endpoint di bawah hanya membaca tabel yang sudah ada dan tidak menghitung 
 
 10. **`GET /dashboard/activity` default 20 baris (maks 100)**, urut `transaction_date` turun, filter `portfolio_id` opsional; portfolio tak dikenal → 404.
 
+## 7.14 Performance Indexes & Numeric Precision Policy (Stage X)
+
+**Status:** APPROVED (2026-11-20, Project Owner delegated to Hermes).
+
+### 7.14.1 Index justification
+
+Migration `2462e115ce2f` adds only indexes already listed in
+`specifications/database/schema-spec.md` §13 "Indexing Strategy":
+
+| Index (migration) | Spec §13 row |
+|---|---|
+| `ix_assets_symbol_type` | assets — symbol, asset_type |
+| `ix_market_candles_asset_tf_time` | market_candles — asset_id, timeframe, open_time |
+| `ix_analytics_runs_type_started` | analytics_runs — engine_type, started_at |
+| `ix_perf_results_portfolio_period` | performance_results — portfolio_id, period_start, period_end |
+| `ix_tech_results_asset_tf_time` | technical_results — asset_id, timeframe, observation_time |
+| `ix_regime_results_asset_tf_time` | market_regime_results — asset_id, timeframe, observation_time |
+| `ix_scanner_results_run_rank` | scanner_results — scanner_run_id, rank |
+
+No index outside §13 was added. Additional indexes require a measured query
+problem, per the same section.
+
+### 7.14.2 Numeric precision policy
+
+- Money, prices, quantities, weights and P&L in the **portfolio** path (cost
+  basis, holdings, valuation, performance, allocation, portfolio risk,
+  snapshots, analytics persistence) stay `Decimal` end to end and leave the API
+  as decimal strings. `latest_close_prices()` therefore returns `Decimal`, and
+  `closes_in_range()` returns `Decimal` too.
+- **Documented exception:** the instrument-level risk/technical statistics
+  (`backend/app/engines/risk/engine.py`, `technical`) convert close prices to
+  `float` to run standard deviation, drawdown and quantile math. Those values are
+  ratios/aggregates that are never persisted as money, and the conversion is
+  confined to the statistics functions. This exception must not be copied into
+  the portfolio money path.
+- Any new float usage in a money path is a defect, not a style choice.
+
 # 8. Market Scanner Decisions
 
 ## 8.1 Independent Scanner Engine
