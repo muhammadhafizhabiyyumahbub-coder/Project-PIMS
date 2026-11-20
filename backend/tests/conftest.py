@@ -60,6 +60,7 @@ def setup_database():
     from alembic.config import Config
 
     alembic_cfg = Config(Path(__file__).resolve().parents[1] / "alembic.ini")
+    alembic_cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "app" / "database" / "migrations"))
     alembic_cfg.set_main_option("sqlalchemy.url", get_settings().database_url)
     command.stamp(alembic_cfg, "head")
     yield

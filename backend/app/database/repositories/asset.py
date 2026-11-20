@@ -16,6 +16,10 @@ def get_assets(session: Session, asset_ids: list[uuid.UUID]) -> list[Asset]:
     return list(session.scalars(select(Asset).where(Asset.id.in_(asset_ids))).all())
 
 
+def get_asset(session: Session, asset_id: uuid.UUID) -> Asset | None:
+    return session.get(Asset, asset_id)
+
+
 def get_asset_with_market(
     session: Session, asset_id: uuid.UUID
 ) -> tuple[Asset, str | None] | None:

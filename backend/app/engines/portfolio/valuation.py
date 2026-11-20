@@ -85,8 +85,7 @@ def value_portfolio(
         market_value: Decimal | None = None
         unrealized: Decimal | None = None
         if latest is not None:
-            price_raw, price_time = latest
-            price = Decimal(str(price_raw))
+            price, price_time = latest
             age = priced_at - price_time
             if age.total_seconds() <= PRICE_FRESHNESS_SECONDS:
                 price_status = "AVAILABLE"

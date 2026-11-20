@@ -4,6 +4,7 @@ Functions here only read/write rows; they never commit. Transaction boundaries
 belong to the calling service so financial writes stay atomic (schema-spec §15.1).
 """
 
+from decimal import Decimal
 import uuid
 from datetime import UTC, datetime
 
@@ -262,7 +263,7 @@ def get_asset(session: Session, asset_id: uuid.UUID) -> Asset | None:
     return session.get(Asset, asset_id)
 
 
-def latest_close_prices(session: Session, asset_ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[float, datetime]]:
+def latest_close_prices(session: Session, asset_ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[Decimal, datetime]]:
     """Latest stored candle close for list of assets. Batch query."""
     # DISTINCT ON (asset_id) fetches latest row per asset_id.
     subq = (
@@ -281,7 +282,7 @@ def latest_close_prices(session: Session, asset_ids: list[uuid.UUID]) -> dict[uu
         .where(subq.c.rn == 1)
     ).all()
     
-    return {row.asset_id: (float(row.close_price), (row.close_time or row.open_time)) for row in rows}
+    return {row.asset_id: (Decimal(str(row.close_price)), (row.close_time or row.open_time)) for row in rows}
 
 
 def closes_in_range(

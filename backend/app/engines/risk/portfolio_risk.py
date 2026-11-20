@@ -320,7 +320,7 @@ def risk_for_portfolio(session: Session, portfolio_id, window_days: int) -> Risk
         symbol = asset.symbol if asset else str(asset_id)
         asset_type = asset.asset_type if asset else "UNKNOWN"
         latest = latest_prices.get(asset_id)
-        price = Decimal(str(latest[0])) if latest else None
+        price = latest[0] if latest else None
         market_value = state.quantity * price if price is not None else None
         holding_inputs.append(
             HoldingInput(
