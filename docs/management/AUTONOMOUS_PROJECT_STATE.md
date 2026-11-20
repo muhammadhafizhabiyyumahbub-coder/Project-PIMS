@@ -38,7 +38,8 @@
 
 ## 4. Bug/weakness yang diketahui (jujur)
 
-- **AKTIF (sedang diperbaiki):** regresi Stage V — `NameError: name 'ScannerResult' is not defined` di `backend/app/api/rest/scanner.py:120,187`; 5 test gagal (`test_scanner_results_*`, `test_opportunities_shape_and_truthfulness`, `test_scanner_qualification_endpoint`). Suite serial: 5 failed, 188 passed.
+- **SELESAI:** regresi Stage V (`NameError: ScannerResult`) dan bug path alembic sudah diperbaiki (`8307b86`, `e8d7c52`); suite serial **193 passed, 0 failed**.
+- **AKTIF (ronde berjalan):** (a) melengkapi test Stage V (fx constraint, quote-dengan-data/freshness, JSONB 422, 404, no-float); (b) 3 cacat qualification: gate `READY but FAILED`, `volatility=None` dianggap 0 → RISK PASSED, dan timeframe risk/scanner tidak difilter.
 - **Aturan proses:** JANGAN menjalankan `pytest` bersamaan dengan ronde OpenCode — keduanya memakai DB `pims_test` dan menyebabkan `ForeignKeyViolation`/`UniqueViolation` palsu (pernah terjadi; saya sendiri yang menyebabkannya). Semua test DB harus serial.
 
 - `market_quotes`/`fx_rates`/`scanner_configurations`: **dibuat di Stage V** (`d2dcc981c45c`), tetapi ingestion quote/FX belum ada → endpoint baca bisa kosong (`data: null` + `UNAVAILABLE`) sampai job ingestion dibuat.
