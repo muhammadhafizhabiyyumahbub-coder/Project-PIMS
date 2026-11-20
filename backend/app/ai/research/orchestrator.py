@@ -149,13 +149,13 @@ def run_job(session: Session, job: ResearchJob) -> ResearchJob:
     readiness = evaluate_engine_readiness(session, asset.id, request.timeframe)
     job.engine_readiness = jsonable_readiness(readiness)
     session.commit()
-    required = [k for k, v in readiness.items() if v["detail"].get("required")]
-    blocking = [k for k in required if readiness[k]["state"] != "READY"]
-    if blocking:
+    
+    summary = qualification_summary(readiness)
+    if summary["status"] != "QUALIFIED":
         advance(
             BLOCKED,
             error_code="ENGINES_NOT_READY",
-            error_message=f"Required engines not READY: {', '.join(blocking)}",
+            error_message=f"Required engines not PASSED: {summary['passed_by']}",
         )
         return job
 

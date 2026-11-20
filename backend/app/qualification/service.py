@@ -47,11 +47,11 @@ def _latest_regime(session: Session, asset_id: str, timeframe: str) -> MarketReg
     )
 
 
-def _latest_risk(session: Session, asset_id: str) -> RiskResult | None:
+def _latest_risk(session: Session, asset_id: str, timeframe: str) -> RiskResult | None:
     return (
         session.query(RiskResult)
         .join(AnalyticsRun, RiskResult.analytics_run_id == AnalyticsRun.id)
-        .filter(RiskResult.asset_id == asset_id)
+        .filter(RiskResult.asset_id == asset_id, AnalyticsRun.timeframe == timeframe)
         .order_by(AnalyticsRun.started_at.desc())
         .first()
     )
@@ -66,10 +66,11 @@ def _latest_technical(session: Session, asset_id: str, timeframe: str) -> Techni
     )
 
 
-def _latest_scanner_result(session: Session, asset_id: str) -> ScannerResult | None:
+def _latest_scanner_result(session: Session, asset_id: str, timeframe: str) -> ScannerResult | None:
     return (
         session.query(ScannerResult)
-        .filter_by(asset_id=asset_id)
+        .join(AnalyticsRun, ScannerResult.scanner_run_id == AnalyticsRun.id)
+        .filter(ScannerResult.asset_id == asset_id, AnalyticsRun.timeframe == timeframe)
         .order_by(ScannerResult.created_at.desc())
         .first()
     )
@@ -100,7 +101,7 @@ def evaluate_engine_readiness(
 
     # Technical
     tech = _latest_technical(session, asset_id, timeframe)
-    tech_run = _latest_analytics_run(session, asset_id, "TECHNICAL")
+    tech_run = session.query(AnalyticsRun).filter_by(asset_id=asset_id, engine_type="TECHNICAL", timeframe=timeframe).order_by(AnalyticsRun.started_at.desc()).first()
     state = _state_from_run(tech_run, tech.observation_time if tech else None, now, max_stale)
     readiness["TECHNICAL"] = {
         "state": state,
@@ -111,7 +112,7 @@ def evaluate_engine_readiness(
 
     # Market regime (depends on technical; failed technical blocks regime)
     regime = _latest_regime(session, asset_id, timeframe)
-    regime_run = _latest_analytics_run(session, asset_id, "MARKET_REGIME")
+    regime_run = session.query(AnalyticsRun).filter_by(asset_id=asset_id, engine_type="MARKET_REGIME", timeframe=timeframe).order_by(AnalyticsRun.started_at.desc()).first()
     state = _state_from_run(regime_run, regime.observation_time if regime else None, now, max_stale)
     if state == READY and regime is not None:
         allowed = policy["regime_allowed_trends"]
@@ -138,36 +139,48 @@ def evaluate_engine_readiness(
         }
 
     # Risk
-    risk_result = _latest_risk(session, asset_id)
-    risk_run = _latest_analytics_run(session, asset_id, "RISK")
+    risk_result = _latest_risk(session, asset_id, timeframe)
+    risk_run = session.query(AnalyticsRun).filter_by(asset_id=asset_id, engine_type="RISK", timeframe=timeframe).order_by(AnalyticsRun.started_at.desc()).first()
     # Staleness follows the underlying data window, not when the run happened:
     # recomputing from old candles must not qualify as fresh.
     risk_data_time = risk_run.observation_end if risk_run else None
     state = _state_from_run(risk_run, risk_data_time, now, max_stale)
     if state == READY and risk_result is not None:
-        vol = float(risk_result.volatility or 0)
-        if vol <= policy["risk_max_annualized_volatility"]:
-            readiness["RISK"] = {
-                "state": READY,
-                "label": PASSED,
-                "observation_time": risk_run.completed_at,
-                "detail": {
-                    "volatility": vol,
-                    "classification": risk_result.risk_classification,
-                    "required": True,
-                },
-            }
-        else:
-            readiness["RISK"] = {
+        if risk_result.volatility is None:
+             readiness["RISK"] = {
                 "state": READY,
                 "label": FAILED,
                 "observation_time": risk_run.completed_at,
                 "detail": {
-                    "volatility": vol,
-                    "threshold": policy["risk_max_annualized_volatility"],
+                    "volatility": None,
+                    "reason": "risk metric unavailable",
                     "required": True,
                 },
             }
+        else:
+            vol = float(risk_result.volatility)
+            if vol <= policy["risk_max_annualized_volatility"]:
+                readiness["RISK"] = {
+                    "state": READY,
+                    "label": PASSED,
+                    "observation_time": risk_run.completed_at,
+                    "detail": {
+                        "volatility": vol,
+                        "classification": risk_result.risk_classification,
+                        "required": True,
+                    },
+                }
+            else:
+                readiness["RISK"] = {
+                    "state": READY,
+                    "label": FAILED,
+                    "observation_time": risk_run.completed_at,
+                    "detail": {
+                        "volatility": vol,
+                        "threshold": policy["risk_max_annualized_volatility"],
+                        "required": True,
+                    },
+                }
     else:
         readiness["RISK"] = {
             "state": state,
@@ -177,7 +190,8 @@ def evaluate_engine_readiness(
         }
 
     # Scanner eligibility
-    scanner_result = _latest_scanner_result(session, asset_id)
+    scanner_result = _latest_scanner_result(session, asset_id, timeframe)
+    scanner_run = session.query(AnalyticsRun).filter_by(asset_id=asset_id, engine_type="SCANNER", timeframe=timeframe).order_by(AnalyticsRun.started_at.desc()).first()
     if scanner_result is None:
         readiness["SCANNER"] = {
             "state": PENDING,
