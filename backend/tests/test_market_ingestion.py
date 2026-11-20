@@ -332,8 +332,38 @@ def test_ingest_fx_reverse_skipped(db_session):
     res = ingest_fx_rates(db_session, pairs=[("USD", "IDR")])
     iq.YahooProvider = orig
 
-    # Should skip because inverse not auto-flipped
+    # Should skip because the provider has no USD/IDR direction; never invert.
     assert res["written"] == 0
-    assert res["skipped"] >= 1 or len(res["failed"]) >= 1  # either skipped or failed
+    assert res["skipped"] == 1
+    assert res["failed"] == []
+    assert res["skipped_reasons"], "skipped rows must carry an explicit reason"
+    assert "direction" in res["skipped_reasons"][0]["reason"]
     count = db_session.query(FXRate).filter_by(base_currency="USD", quote_currency="IDR").count()
+    assert count == 0
+
+
+def test_ingest_fx_unexpected_error_failed(db_session):
+    """A transport error is a failure, never a silent skip."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="FX")
+    db_session.add(provider)
+    db_session.commit()
+
+    class ExplodingTransport:
+        def handle_request(self, request):
+            raise RuntimeError("connection reset by peer")
+
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(
+        base_url="https://query1.finance.yahoo.com", transport=ExplodingTransport()
+    )
+
+    res = ingest_fx_rates(db_session, pairs=[("USD", "IDR")])
+    iq.YahooProvider = orig
+
+    assert res["written"] == 0
+    assert res["skipped"] == 0
+    assert len(res["failed"]) == 1
+    assert res["failed"][0]["reason"] != ""
+    count = db_session.query(FXRate).count()
     assert count == 0

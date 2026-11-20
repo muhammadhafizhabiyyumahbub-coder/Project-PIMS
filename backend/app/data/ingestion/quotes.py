@@ -5,6 +5,7 @@ import json
 from datetime import datetime, UTC
 from decimal import Decimal
 
+from httpx import HTTPStatusError
 from sqlalchemy.orm import Session
 
 from app.core.db import get_session_factory
@@ -33,7 +34,6 @@ def ingest_quotes(
     if asset_ids:
         query = query.filter(Asset.id.in_(asset_ids))
     assets = query.all()
-    print(f"DEBUG: Found {len(assets)} assets")
 
     requested = len(assets)
     written = 0
@@ -104,6 +104,7 @@ def ingest_fx_rates(
     requested = len(pairs)
     written = 0
     skipped = 0
+    skipped_reasons: list = []
     failed = []
 
     yahoo = YahooProvider()
@@ -115,6 +116,12 @@ def ingest_fx_rates(
             klines = yahoo.fetch_klines(symbol, feed_timeframe, limit=1)
             if not klines:
                 skipped += 1
+                skipped_reasons.append(
+                    {
+                        "pair": f"{base}/{quote}",
+                        "reason": f"provider returned no data for {base}/{quote}",
+                    }
+                )
                 continue
             
             latest = klines[-1]
@@ -137,21 +144,29 @@ def ingest_fx_rates(
                 freshness_status=feed_stat,
             )
             written += 1
-        except (ValueError, RuntimeError) as e:
-            # Handle specifically for empty/not found results from provider
-            if "404" in str(e):
+        except HTTPStatusError as e:
+            # 404 means the provider has no data for this pair/direction — we do
+            # NOT invert the rate, we report it as skipped with a reason.
+            if e.response.status_code == 404:
                 skipped += 1
+                skipped_reasons.append(
+                    {
+                        "pair": f"{base}/{quote}",
+                        "reason": f"provider does not offer {base}/{quote} direction",
+                    }
+                )
             else:
                 logger.error(f"Provider error for {base}/{quote}: {e}")
                 failed.append({"pair": f"{base}/{quote}", "reason": str(e)})
         except Exception as e:
             logger.exception(f"Unexpected error for {base}/{quote}")
-            failed.append({"pair": f"{base}/{quote}", "reason": "unexpected error"})
+            failed.append({"pair": f"{base}/{quote}", "reason": str(e)})
 
     return {
         "requested": requested,
         "written": written,
         "skipped": skipped,
+        "skipped_reasons": skipped_reasons,
         "failed": failed,
         "provider": code,
     }
