@@ -2,7 +2,7 @@
 from app.engines import market_regime, risk, scanner
 from app.engines.technical import engine as technical
 
-from tests.conftest import synthetic_candles
+from conftest import synthetic_candles
 
 
 class TestTechnical:
