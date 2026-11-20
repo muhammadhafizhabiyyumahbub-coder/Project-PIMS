@@ -1,6 +1,6 @@
 "Quote and FX rates ingestion service."
 import uuid
-import sys
+import logging
 import json
 from datetime import datetime, UTC
 from decimal import Decimal
@@ -13,11 +13,14 @@ from app.database.repositories.market import upsert_quote, upsert_fx_rate
 from app.data.providers.crypto.yahoo import YahooProvider
 from app.data.validation.freshness import freshness_status
 
+logger = logging.getLogger(__name__)
+
 
 def ingest_quotes(
     session: Session,
     asset_ids: list[uuid.UUID] | None = None,
     provider_code: str | None = None,
+    feed_timeframe: str = "1h",
 ) -> dict:
     code = provider_code or "YAHOO"
     provider = session.query(DataProvider).filter_by(code=code).first()
@@ -40,23 +43,20 @@ def ingest_quotes(
     yahoo = YahooProvider()
 
     for asset in assets:
-        print(f"DEBUG: Processing asset {asset.symbol}")
         try:
-            klines = yahoo.fetch_klines(asset.symbol, "1h", limit=1)
-            print(f"DEBUG: Fetched {len(klines)} klines for {asset.symbol}")
+            klines = yahoo.fetch_klines(asset.symbol, feed_timeframe, limit=1)
             if not klines:
                 failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": "empty payload"})
                 continue
             latest = klines[-1]
             price = Decimal(str(latest.close_price))
-            print(f"DEBUG: Price={price}, source_ts={latest.close_time}, is_realtime=False")
             if price <= 0:
                 failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": "invalid price"})
                 continue
             
             source_ts = latest.close_time
             now = datetime.now(UTC)
-            feed_stat = freshness_status(source_ts, now, "1h")
+            feed_stat = freshness_status(source_ts, now, feed_timeframe)
 
             upsert_quote(
                 session,
@@ -70,11 +70,12 @@ def ingest_quotes(
                 feed_status=feed_stat,
             )
             written += 1
-        except Exception as e:
-            print(f"DEBUG: Exception caught: {e}")
-            import traceback
-            traceback.print_exc()
+        except (ValueError, RuntimeError) as e:
+            logger.error(f"Provider error for {asset.symbol}: {e}")
             failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": str(e)})
+        except Exception as e:
+            logger.exception(f"Unexpected error for {asset.symbol}")
+            failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": "unexpected error"})
 
     session.commit()
     return {
@@ -91,6 +92,7 @@ def ingest_fx_rates(
     session: Session,
     pairs: list[tuple[str, str]] = [("USD", "IDR")],
     provider_code: str | None = None,
+    feed_timeframe: str = "1h",
 ) -> dict:
     code = provider_code or "YAHOO"
     provider = session.query(DataProvider).filter_by(code=code).first()
@@ -110,10 +112,11 @@ def ingest_fx_rates(
         # Yahoo symbol for USD/IDR is USDIDR=X
         symbol = f"{base}{quote}=X"
         try:
-            klines = yahoo.fetch_klines(symbol, "1h", limit=1)
+            klines = yahoo.fetch_klines(symbol, feed_timeframe, limit=1)
             if not klines:
-                failed.append({"pair": f"{base}/{quote}", "reason": "empty payload"})
+                skipped += 1
                 continue
+            
             latest = klines[-1]
             rate = Decimal(str(latest.close_price))
             if rate <= 0:
@@ -122,7 +125,7 @@ def ingest_fx_rates(
 
             source_ts = latest.close_time
             now = datetime.now(UTC)
-            feed_stat = freshness_status(source_ts, now, "1h")
+            feed_stat = freshness_status(source_ts, now, feed_timeframe)
 
             upsert_fx_rate(
                 session,
@@ -134,12 +137,16 @@ def ingest_fx_rates(
                 freshness_status=feed_stat,
             )
             written += 1
-        except Exception as e:
-            # Check inverse or skip if not found
-            if "IDRUSD" in symbol or "404" in str(e):
+        except (ValueError, RuntimeError) as e:
+            # Handle specifically for empty/not found results from provider
+            if "404" in str(e):
                 skipped += 1
             else:
+                logger.error(f"Provider error for {base}/{quote}: {e}")
                 failed.append({"pair": f"{base}/{quote}", "reason": str(e)})
+        except Exception as e:
+            logger.exception(f"Unexpected error for {base}/{quote}")
+            failed.append({"pair": f"{base}/{quote}", "reason": "unexpected error"})
 
     return {
         "requested": requested,
