@@ -38,7 +38,10 @@
 
 ## 4. Bug/weakness yang diketahui (jujur)
 
-- `market_quotes`/`fx_rates`/`scanner_configurations` belum ada → endpoint quote/fx/config belum bisa nyata.
+- **AKTIF (sedang diperbaiki):** regresi Stage V — `NameError: name 'ScannerResult' is not defined` di `backend/app/api/rest/scanner.py:120,187`; 5 test gagal (`test_scanner_results_*`, `test_opportunities_shape_and_truthfulness`, `test_scanner_qualification_endpoint`). Suite serial: 5 failed, 188 passed.
+- **Aturan proses:** JANGAN menjalankan `pytest` bersamaan dengan ronde OpenCode — keduanya memakai DB `pims_test` dan menyebabkan `ForeignKeyViolation`/`UniqueViolation` palsu (pernah terjadi; saya sendiri yang menyebabkannya). Semua test DB harus serial.
+
+- `market_quotes`/`fx_rates`/`scanner_configurations`: **dibuat di Stage V** (`d2dcc981c45c`), tetapi ingestion quote/FX belum ada → endpoint baca bisa kosong (`data: null` + `UNAVAILABLE`) sampai job ingestion dibuat.
 - `watchlists`: 6 endpoint di `api-spec` tanpa tabel di `schema-spec` → **konflik dokumen**, belum dikerjakan.
 - Engine `correlation`, `factor`, `sentiment`, `macro`, `backtesting`, `attribution`, `scenario` masih kosong (belum ada rumus di spec).
 - `ruff B008` (pola `Depends()` FastAPI) belum dikonfigurasi eksplisit.
