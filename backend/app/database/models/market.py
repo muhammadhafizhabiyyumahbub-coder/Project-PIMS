@@ -60,7 +60,9 @@ class MarketQuote(Base):
     source_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     freshness_status: Mapped[str] = mapped_column(String(30), nullable=False)
-    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    is_realtime: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    feed_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    quote_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
 
 class FXRate(Base):
     __tablename__ = "fx_rates"

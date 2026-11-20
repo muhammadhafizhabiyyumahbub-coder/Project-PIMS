@@ -97,7 +97,7 @@ def update_config(config_id: str, payload: ScannerConfigUpdate, db: Session = De
     if not config:
         return error_response("NOT_FOUND", "not found", 404)
         
-    repo.update_scanner_config(db, config, **payload.dict(exclude_unset=True))
+    repo.update_scanner_config(db, config, **payload.model_dump(exclude_unset=True))
     db.commit()
     return success_response({"id": str(config.id)})
 

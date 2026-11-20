@@ -2,7 +2,7 @@ import pytest
 import uuid
 import json
 from decimal import Decimal
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
 from fastapi.testclient import TestClient
 
@@ -34,18 +34,18 @@ def test_fx_rate_db_constraints(db_session, seeded_data):
     provider = seeded_data["provider"]
     # rate <= 0
     with pytest.raises(IntegrityError):
-        db_session.add(FXRate(base_currency="USD", quote_currency="IDR", rate=0, provider_id=provider.id, source_timestamp=datetime.utcnow(), freshness_status="FRESH"))
+        db_session.add(FXRate(base_currency="USD", quote_currency="IDR", rate=0, provider_id=provider.id, source_timestamp=datetime.now(timezone.utc), freshness_status="FRESH"))
         db_session.commit()
     db_session.rollback()
 
     # base == quote
     with pytest.raises(IntegrityError):
-        db_session.add(FXRate(base_currency="USD", quote_currency="USD", rate=1.0, provider_id=provider.id, source_timestamp=datetime.utcnow(), freshness_status="FRESH"))
+        db_session.add(FXRate(base_currency="USD", quote_currency="USD", rate=1.0, provider_id=provider.id, source_timestamp=datetime.now(timezone.utc), freshness_status="FRESH"))
         db_session.commit()
     db_session.rollback()
 
     # duplicate
-    ts = datetime.utcnow()
+    ts = datetime.now(timezone.utc)
     db_session.add(FXRate(base_currency="USD", quote_currency="IDR", rate=15000.0, provider_id=provider.id, source_timestamp=ts, freshness_status="FRESH"))
     db_session.commit()
     with pytest.raises(IntegrityError):
@@ -63,8 +63,8 @@ def test_quote_freshness_status(client, db_session, seeded_data):
         provider_id=provider.id,
         last_price=Decimal("100"),
         currency="USD",
-        source_timestamp=datetime.utcnow(),
-        received_at=datetime.utcnow() + timedelta(seconds=1),
+        source_timestamp=datetime.now(timezone.utc),
+        received_at=datetime.now(timezone.utc) + timedelta(seconds=1),
         freshness_status="AVAILABLE"
     ))
     db_session.commit()
@@ -78,8 +78,8 @@ def test_quote_freshness_status(client, db_session, seeded_data):
         provider_id=provider.id,
         last_price=Decimal("100"),
         currency="USD",
-        source_timestamp=datetime.utcnow() - timedelta(hours=5),
-        received_at=datetime.utcnow() + timedelta(seconds=10),
+        source_timestamp=datetime.now(timezone.utc) - timedelta(hours=5),
+        received_at=datetime.now(timezone.utc) + timedelta(seconds=10),
         freshness_status="STALE"
     ))
     db_session.commit()
@@ -95,8 +95,8 @@ def test_no_json_float_in_quotes(client, db_session, seeded_data):
         provider_id=provider.id,
         currency="USD",
         last_price=Decimal("100.55"),
-        source_timestamp=datetime.utcnow(),
-        received_at=datetime.utcnow(),
+        source_timestamp=datetime.now(timezone.utc),
+        received_at=datetime.now(timezone.utc),
         freshness_status="AVAILABLE"
     ))
     db_session.commit()

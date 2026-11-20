@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, UTC
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, Boolean
 from sqlalchemy.orm import Session
 
 from app.database.models import MarketQuote, FXRate
@@ -84,6 +84,8 @@ def upsert_quote(
         currency=currency,
         source_timestamp=source_timestamp,
         received_at=received_at,
+        is_realtime=is_realtime,
+        feed_status=feed_status,
         freshness_status=feed_status,
     )
     session.add(quote)
