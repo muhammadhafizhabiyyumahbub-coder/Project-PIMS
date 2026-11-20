@@ -36,6 +36,7 @@ from decimal import Decimal, localcontext
 
 from sqlalchemy.orm import Session
 
+from app.database.repositories import asset as asset_repo
 from app.database.repositories import portfolio as repo
 from app.engines.portfolio.holdings import replay_holdings
 from app.engines.portfolio.performance import serialize_return
@@ -307,13 +308,18 @@ def risk_for_portfolio(session: Session, portfolio_id, window_days: int) -> Risk
             "Portfolio tidak memiliki holding; tidak ada return yang dapat diukur.",
         )
 
+    # Batch lookup asset details
+    asset_ids = list(holdings_state.keys())
+    assets = {a.id: a for a in asset_repo.get_assets(session, asset_ids)}
+    latest_prices = repo.latest_close_prices(session, asset_ids)
+
     holding_inputs = []
     invested = ZERO
     for asset_id, state in sorted(holdings_state.items(), key=lambda item: str(item[0])):
-        asset = repo.get_asset(session, asset_id)
+        asset = assets.get(asset_id)
         symbol = asset.symbol if asset else str(asset_id)
         asset_type = asset.asset_type if asset else "UNKNOWN"
-        latest = repo.latest_close_price(session, asset_id)
+        latest = latest_prices.get(asset_id)
         price = Decimal(str(latest[0])) if latest else None
         market_value = state.quantity * price if price is not None else None
         holding_inputs.append(

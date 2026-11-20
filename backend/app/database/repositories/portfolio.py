@@ -262,18 +262,26 @@ def get_asset(session: Session, asset_id: uuid.UUID) -> Asset | None:
     return session.get(Asset, asset_id)
 
 
-def latest_close_price(session: Session, asset_id: uuid.UUID) -> tuple[float, datetime] | None:
-    """Latest stored candle close for an asset. No provider fetch, no fabricated prices."""
-    row = session.execute(
-        select(MarketCandle.close_price, MarketCandle.close_time, MarketCandle.open_time)
-        .where(MarketCandle.asset_id == asset_id)
-        .order_by(MarketCandle.open_time.desc())
-        .limit(1)
-    ).first()
-    if row is None:
-        return None
-    close_price, close_time, open_time = row
-    return float(close_price), (close_time or open_time)
+def latest_close_prices(session: Session, asset_ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[float, datetime]]:
+    """Latest stored candle close for list of assets. Batch query."""
+    # DISTINCT ON (asset_id) fetches latest row per asset_id.
+    subq = (
+        select(
+            MarketCandle.asset_id,
+            MarketCandle.close_price,
+            MarketCandle.close_time,
+            MarketCandle.open_time,
+            func.row_number().over(partition_by=MarketCandle.asset_id, order_by=MarketCandle.open_time.desc()).label("rn")
+        )
+        .where(MarketCandle.asset_id.in_(asset_ids))
+    ).subquery()
+    
+    rows = session.execute(
+        select(subq.c.asset_id, subq.c.close_price, subq.c.close_time, subq.c.open_time)
+        .where(subq.c.rn == 1)
+    ).all()
+    
+    return {row.asset_id: (float(row.close_price), (row.close_time or row.open_time)) for row in rows}
 
 
 def closes_in_range(

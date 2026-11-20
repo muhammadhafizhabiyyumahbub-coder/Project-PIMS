@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 from app.database.models import Asset, Market
 
 
-def get_asset(session: Session, asset_id: uuid.UUID) -> Asset | None:
-    return session.get(Asset, asset_id)
+def get_assets(session: Session, asset_ids: list[uuid.UUID]) -> list[Asset]:
+    """Batch asset lookup."""
+    return list(session.scalars(select(Asset).where(Asset.id.in_(asset_ids))).all())
 
 
 def get_asset_with_market(

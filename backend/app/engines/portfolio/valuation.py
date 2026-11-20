@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.database.repositories import asset as asset_repo
 from app.database.repositories import portfolio as repo
 from app.engines.portfolio.holdings import quantize, replay_holdings
 
@@ -68,11 +69,16 @@ def value_portfolio(
     realized_total = Decimal("0")
     unrealized_total = Decimal("0")
 
+    # Batch lookup asset details and prices
+    asset_ids = list(holdings.keys())
+    assets = {a.id: a for a in asset_repo.get_assets(session, asset_ids)}
+    latest_prices = repo.latest_close_prices(session, asset_ids)
+
     for asset_id, state in sorted(holdings.items(), key=lambda item: str(item[0])):
-        asset = repo.get_asset(session, asset_id)
+        asset = assets.get(asset_id)
         symbol = asset.symbol if asset else str(asset_id)
         realized_total += state.realized_pnl
-        latest = repo.latest_close_price(session, asset_id)
+        latest = latest_prices.get(asset_id)
         price: Decimal | None = None
         price_time: datetime | None = None
         price_status = "MISSING"
