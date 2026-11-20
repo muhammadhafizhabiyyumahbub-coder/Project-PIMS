@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from app.api.envelope import error_response, success_response
 from app.core.db import get_db
 from app.data.validation.freshness import TIMEFRAME_SECONDS, freshness_status
-from app.database.models import Asset, DataProvider, MarketCandle
+from app.database.models import Asset, DataProvider, MarketCandle, MarketQuote
+from app.database.repositories.market import list_quotes as repo_list_quotes
+from app.database.repositories.market import get_latest_quote_for_asset
 from app.engines.runner import load_candles
 
 router = APIRouter(prefix="/market-data", tags=["Market Data"])
@@ -23,24 +25,64 @@ def _decimal_str(value: Decimal | float | None) -> str | None:
     return format(Decimal(str(value)).normalize(), "f")
 
 
-@router.post("/refresh")
-def refresh(symbol: str | None = None, timeframe: str = "1h", db: Session = Depends(get_db)):
-    """Fetch latest klines from Bybit and persist normalized candles."""
-    from app.data.ingestion.ingest import refresh_asset_candles
-    from app.data.storage.universe import ensure_universe
+@router.get("/quotes")
+def list_quotes(
+    asset_id: uuid.UUID | None = None,
+    provider_id: uuid.UUID | None = None,
+    limit: int = 50,
+    cursor: str | None = None,
+    db: Session = Depends(get_db),
+):
+    rows, has_more = repo_list_quotes(db, asset_id=asset_id, provider_id=provider_id, limit=limit)
+    return success_response(
+        [
+            {
+                "id": str(q.id),
+                "asset_id": str(q.asset_id),
+                "bid": _decimal_str(q.bid_price),
+                "ask": _decimal_str(q.ask_price),
+                "last": _decimal_str(q.last_price),
+                "currency": q.currency,
+                "freshness_status": q.freshness_status,
+                "received_at": q.received_at.isoformat(),
+            }
+            for q in rows
+        ],
+        meta={"has_more": has_more, "limit": limit},
+    )
 
-    universe = ensure_universe(db)
-    assets = universe["assets"]
-    if symbol:
-        if symbol not in assets:
-            from fastapi import HTTPException
 
-            raise HTTPException(status_code=404, detail="unknown symbol")
-        assets = {symbol: assets[symbol]}
-    refreshed = {
-        sym: refresh_asset_candles(db, asset, timeframe) for sym, asset in assets.items()
-    }
-    return success_response({"refreshed_candles": refreshed}, meta={"timeframe": timeframe})
+@router.get("/instruments/{asset_id}/quote")
+def get_instrument_quote(asset_id: str, db: Session = Depends(get_db)):
+    try:
+        aid = uuid.UUID(asset_id)
+    except (ValueError, AttributeError):
+        return error_response("NOT_FOUND", f"asset {asset_id} not found", 404)
+    
+    quote = get_latest_quote_for_asset(db, aid)
+    
+    if quote is None:
+        return success_response(
+            None,
+            meta={
+                "feed_status": "UNAVAILABLE",
+                "reason": f"No recent quotes available for asset {asset_id}."
+            }
+        )
+        
+    return success_response(
+        {
+            "id": str(quote.id),
+            "asset_id": str(quote.asset_id),
+            "bid": _decimal_str(quote.bid_price),
+            "ask": _decimal_str(quote.ask_price),
+            "last": _decimal_str(quote.last_price),
+            "currency": quote.currency,
+            "freshness_status": quote.freshness_status,
+            "received_at": quote.received_at.isoformat(),
+        },
+        meta={"feed_status": quote.freshness_status}
+    )
 
 
 @router.get("/candles")

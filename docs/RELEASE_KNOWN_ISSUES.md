@@ -65,6 +65,13 @@ sistem pada tahap Release Candidate V1.
 - **Dampak:** Status git repository menampilkan `backend/uv.lock` sebagai untracked file.
 - **Rencana penanganan:** Putuskan apakah lockfile `uv` dikomit untuk mengunci dependency backend atau dimasukkan ke `.gitignore`.
 
+### 1.6 Ingestion `market_quotes` dan `fx_rates` belum ada (endpoint read-only sudah siap)
+- **Level:** Medium
+- **Modul:** Market Data (Stage V)
+- **Deskripsi:** Tabel `market_quotes` (§6.1), `fx_rates` (§6.4), dan `scanner_configurations` (§8.1) beserta endpoint baca/CRUD-nya sudah ada, tetapi belum ada jalur yang **menulis** quote/FX (belum ada job ingestion).
+- **Dampak:** `GET /market-data/quotes` dan `.../instruments/{id}/quote` mengembalikan `data: null` dengan `feed_status: UNAVAILABLE` sampai ingestion dibuat — bukan error, bukan angka karangan. Konversi FX lintas mata uang belum dipakai karena spec §6.4 melarang mengasumsikan inverse rate.
+- **Rencana penanganan:** Implementasikan job ingestion quote (provider Yahoo/Bybit adapter yang sudah ada) + penulisan `fx_rates`, lalu tambahkan test end-to-end yang memverifikasi `freshness_status`.
+
 ---
 
 ## 2. Ringkasan dampak terhadap pemakaian

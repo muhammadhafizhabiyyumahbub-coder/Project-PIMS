@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.api.envelope import error_response, success_response
 from app.core.db import get_db
-from app.database.models import Asset, Market, ScannerResult, ScannerRun
-from app.engines.scanner.service import run_scanner
+from app.api.schemas.scanner import ScannerConfigCreate, ScannerConfigUpdate
+from app.database.repositories import scanner as repo
 
 router = APIRouter(prefix="/scanner", tags=["Scanner"])
 
@@ -44,6 +44,69 @@ def scanner_run(timeframe: str = "1h", db: Session = Depends(get_db)):
 def scanner_categories():
     """Supported scanner categories per api-spec §16.2."""
     return success_response(SCANNER_CATEGORIES, meta={"count": len(SCANNER_CATEGORIES)})
+
+
+# Scanner Config endpoints
+@router.post("/configurations")
+def create_config(
+    payload: ScannerConfigCreate,
+    db: Session = Depends(get_db),
+):
+    if payload.category not in SCANNER_CATEGORIES:
+        return error_response("VALIDATION_ERROR", f"invalid category: {payload.category}", 422)
+    if not isinstance(payload.universe_config, dict) or not isinstance(payload.filter_config, dict):
+         return error_response("VALIDATION_ERROR", "configs must be JSON objects", 422)
+    
+    config = repo.create_scanner_config(
+        db, payload.name, payload.category, payload.universe_config, payload.filter_config, payload.description, payload.ranking_config, payload.timeframe
+    )
+    db.commit()
+    return success_response({"id": str(config.id)})
+
+
+@router.get("/configurations")
+def list_configs(db: Session = Depends(get_db)):
+    configs = repo.list_scanner_configs(db)
+    return success_response([
+        {
+            "id": str(c.id),
+            "name": c.name,
+            "category": c.category,
+            "is_active": c.is_active,
+        } for c in configs
+    ])
+
+
+@router.patch("/configurations/{config_id}")
+def update_config(config_id: str, payload: ScannerConfigUpdate, db: Session = Depends(get_db)):
+    try:
+        cid = uuid.UUID(config_id)
+    except (ValueError, AttributeError):
+        return error_response("NOT_FOUND", "not found", 404)
+        
+    config = repo.get_scanner_config(db, cid)
+    if not config:
+        return error_response("NOT_FOUND", "not found", 404)
+        
+    repo.update_scanner_config(db, config, **payload.dict(exclude_unset=True))
+    db.commit()
+    return success_response({"id": str(config.id)})
+
+
+@router.delete("/configurations/{config_id}")
+def delete_config(config_id: str, db: Session = Depends(get_db)):
+    try:
+        cid = uuid.UUID(config_id)
+    except (ValueError, AttributeError):
+        return error_response("NOT_FOUND", "not found", 404)
+        
+    config = repo.get_scanner_config(db, cid)
+    if not config:
+        return error_response("NOT_FOUND", "not found", 404)
+        
+    repo.delete_scanner_config(db, config)
+    db.commit()
+    return success_response(None)
 
 
 @router.get("/results")

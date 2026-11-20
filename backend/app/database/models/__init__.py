@@ -1,6 +1,7 @@
 "SQLAlchemy models package. Import for Alembic autogenerate metadata."
 from app.database.models.core import Asset, DataProvider, Market, ProviderInstrument
-from app.database.models.market import MarketCandle
+from app.database.models.market import MarketCandle, MarketQuote, FXRate
+from app.database.models.scanner import ScannerConfiguration
 from app.database.models.portfolio import (
     CashLedgerEntry,
     Holding,
@@ -40,5 +41,7 @@ __all__ = [
     "Transaction",
     "CashLedgerEntry",
     "Holding",
-    "PortfolioSnapshot",
+    "MarketQuote",
+    "FXRate",
+    "ScannerConfiguration",
 ]

@@ -2,11 +2,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+from app.database.models.core import utc_now
 
 
 class ScannerRun(Base):
@@ -45,3 +46,23 @@ class ScannerResult(Base):
     freshness_status: Mapped[str] = mapped_column(String(30), nullable=False)
     data_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ScannerConfiguration(Base):
+    __tablename__ = "scanner_configurations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    universe_config: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    filter_config: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    ranking_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
