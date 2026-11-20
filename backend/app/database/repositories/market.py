@@ -52,3 +52,76 @@ def get_fx_rate(
         )
         .order_by(FXRate.source_timestamp.desc(), FXRate.id.desc())
     ).first()
+
+
+def upsert_quote(
+    session: Session,
+    *,
+    asset_id: uuid.UUID,
+    provider_id: uuid.UUID,
+    price: Decimal,
+    currency: str,
+    source_timestamp: datetime,
+    received_at: datetime,
+    is_realtime: bool,
+    feed_status: str,
+) -> MarketQuote:
+    # Check idempotency by asset_id, provider_id, and source_timestamp
+    existing = session.scalars(
+        select(MarketQuote).where(
+            MarketQuote.asset_id == asset_id,
+            MarketQuote.provider_id == provider_id,
+            MarketQuote.source_timestamp == source_timestamp,
+        )
+    ).first()
+    if existing:
+        return existing
+
+    quote = MarketQuote(
+        asset_id=asset_id,
+        provider_id=provider_id,
+        last_price=price,
+        currency=currency,
+        source_timestamp=source_timestamp,
+        received_at=received_at,
+        freshness_status=feed_status,
+    )
+    session.add(quote)
+    session.flush()
+    session.refresh(quote)
+    return quote
+
+
+def upsert_fx_rate(
+    session: Session,
+    *,
+    base_currency: str,
+    quote_currency: str,
+    rate: Decimal,
+    provider_id: uuid.UUID,
+    source_timestamp: datetime,
+    freshness_status: str,
+) -> FXRate:
+    existing = session.scalars(
+        select(FXRate).where(
+            FXRate.base_currency == base_currency,
+            FXRate.quote_currency == quote_currency,
+            FXRate.source_timestamp == source_timestamp,
+        )
+    ).first()
+    if existing:
+        return existing
+
+    fx = FXRate(
+        base_currency=base_currency,
+        quote_currency=quote_currency,
+        rate=rate,
+        provider_id=provider_id,
+        source_timestamp=source_timestamp,
+        freshness_status=freshness_status,
+    )
+    session.add(fx)
+    session.flush()
+    session.refresh(fx)
+    return fx
+
