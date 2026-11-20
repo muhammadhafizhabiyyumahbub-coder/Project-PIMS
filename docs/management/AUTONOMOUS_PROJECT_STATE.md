@@ -10,8 +10,8 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `eaec4f6` | `git log --oneline -1` |
-| Backend test | **206 passed, 0 failed** | `pytest -q` (PostgreSQL 17 lokal) |
+| Commit terakhir | `141c3b8` | `git log --oneline -1` |
+| Backend test | **208 passed, 0 failed** | `pytest -q` (PostgreSQL 17 lokal) |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
 | Migration head | `dcadf6176257` | `alembic current` |
 | Endpoint terpasang | 46 operasi (40 path) dari 54 di `api-spec.md` | openapi vs spec diff |
@@ -38,12 +38,14 @@
 
 ## 4. Bug/weakness yang diketahui (jujur)
 
-- **SELESAI (`eaec4f6`): ingestion quote & FX.** `backend/app/data/ingestion/quotes.py` (`ingest_quotes`, `ingest_fx_rates`, jalur CLI `python -m app.data.ingestion.quotes`) + penulis `upsert_quote`/`upsert_fx_rate` di `repositories/market.py`. Provider Yahoo nyata, `Decimal`, `is_realtime=False`, `feed_status` dari `freshness.py`, tanpa data → 0 baris, idempoten, arah FX eksplisit (404 = `skipped` + alasan, tidak pernah dibalik). 9 test di `test_market_ingestion.py`.
-- **Baseline sekarang: 206 passed, 0 failed** (suite serial).
-- **Utang teknis tercatat:** (1) `backend/app/api/rest/scanner.py:100` `payload.dict(...)` deprecated → `model_dump()`; (2) `MarketQuote.metadata` memicu `SAWarning` (nama atribut dicadangkan SQLAlchemy) → rename/`metadata_` mapping; (3) penjadwalan ingestion masih manual (belum ada scheduler) — keputusan operasional.
+- **SELESAI (`141c3b8`): schema drift + FX commit.** `MarketQuote` punya `is_realtime`/`feed_status` yang **tidak ada di `schema-spec` §6.1** dan tidak dibuat migrasi mana pun → INSERT/SELECT ORM gagal di DB nyata (API `/market-data/quotes` sempat **500**). Kolom karangan dihapus dari model/repo/endpoint; `is_realtime` kini konstanta properti feed di response. `ingest_fx_rates` tidak pernah `commit()` → `fx_rates` kosong walau laporan `written: 1`; sudah diperbaiki dan diverifikasi (`fx_rates` = 1, USD/IDR 18158.0). Test anti-drift baru: `backend/tests/test_model_drift.py` (kolom model vs spec) + test persistensi FX lewat koneksi baru.
+- **Baseline sekarang: 208 passed, 0 failed** (suite serial). Verifikasi nyata: `GET /market-data/quotes` 200, `last 58849.37 USD`, `freshness_status LIVE`, `is_realtime false`.
+- **Pelajaran penting (jangan diulang):** DB test dibangun dari model, jadi **test hijau tidak membuktikan DB nyata sinkron dengan migrasi**. Setiap perubahan model wajib diuji terhadap DB nyata (`pims`), bukan hanya `pims_test`.
+- **Cron ingestion** (`ingest-pims-market-data-hourly`, `41ccd6a31a0a`) sempat gagal karena mewarisi `PYTHONPATH` venv Hermes (`ImportError: cannot import name 'ArgsKwargs' from pydantic_core`); script kini membuang `PYTHONPATH`/`PYTHONHOME` untuk proses anak — sudah diverifikasi dengan simulasi env cron.
+- **Utang teknis tercatat:** (1) penjadwalan analytics/snapshot masih manual; (2) `analytics_runs`/penjadwalan ingestion belum punya retry/backoff.
 - **Aturan proses:** (1) JANGAN menjalankan `pytest` bersamaan dengan ronde OpenCode — sama-sama memakai DB `pims_test` dan menghasilkan `ForeignKeyViolation`/`UniqueViolation` palsu. (2) OpenCode dilarang `git checkout <sha>`: dulu commit-nya jatuh di detached HEAD sehingga cron push gagal (`'HEAD:refs/heads/HEAD'`); kerja selalu di branch `master`.
 
-- `market_quotes`/`fx_rates`/`scanner_configurations`: dibuat di Stage V (`d2dcc981c45c`); **ingestion quote/FX kini ADA** (`eaec4f6`) tetapi masih **manual** (jalankan `python -m app.data.ingestion.quotes`); belum ada scheduler, jadi data akan `STALE` bila tidak dijalankan.
+- `market_quotes`/`fx_rates`/`scanner_configurations`: dibuat di Stage V (`d2dcc981c45c`); **ingestion quote/FX ADA** (`eaec4f6`) dan **dijadwalkan tiap jam** lewat cron `ingest-pims-market-data-hourly` (watchdog, hanya bersuara bila gagal).
 - `watchlists`: 6 endpoint di `api-spec` tanpa tabel di `schema-spec` → **konflik dokumen**, belum dikerjakan.
 - Engine `correlation`, `factor`, `sentiment`, `macro`, `backtesting`, `attribution`, `scenario` masih kosong (belum ada rumus di spec).
 - `ruff B008` (pola `Depends()` FastAPI) belum dikonfigurasi eksplisit.
