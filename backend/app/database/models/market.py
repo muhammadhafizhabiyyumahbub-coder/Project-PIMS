@@ -48,6 +48,9 @@ class MarketCandle(Base):
 
 class MarketQuote(Base):
     __tablename__ = "market_quotes"
+    def __repr__(self) -> str:
+        return f"<MarketQuote(id={self.id}, asset_id={self.asset_id})>"
+
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     asset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("assets.id"), nullable=False)
     provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("data_providers.id"), nullable=False)
@@ -60,8 +63,6 @@ class MarketQuote(Base):
     source_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     freshness_status: Mapped[str] = mapped_column(String(30), nullable=False)
-    is_realtime: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    feed_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     quote_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
 
 class FXRate(Base):

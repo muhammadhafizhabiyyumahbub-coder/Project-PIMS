@@ -43,7 +43,7 @@ def list_quotes(
                 "ask": _decimal_str(q.ask_price),
                 "last": _decimal_str(q.last_price),
                 "currency": q.currency,
-                "is_realtime": q.is_realtime,
+                "is_realtime": False,  # Candle-based ingestion is delayed, not live
                 "freshness_status": q.freshness_status,
                 "received_at": q.received_at.isoformat(),
             }
@@ -79,7 +79,7 @@ def get_instrument_quote(asset_id: str, db: Session = Depends(get_db)):
             "ask": _decimal_str(quote.ask_price),
             "last": _decimal_str(quote.last_price),
             "currency": quote.currency,
-            "is_realtime": quote.is_realtime,
+            "is_realtime": False,
             "freshness_status": quote.freshness_status,
             "received_at": quote.received_at.isoformat(),
         },

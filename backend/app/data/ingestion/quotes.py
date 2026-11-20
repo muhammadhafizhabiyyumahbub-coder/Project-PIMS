@@ -96,7 +96,6 @@ def ingest_quotes(
                 currency=final_currency,
                 source_timestamp=source_ts,
                 received_at=now,
-                is_realtime=False,
                 feed_status=feed_stat,
             )
             written += 1
@@ -203,6 +202,7 @@ def ingest_fx_rates(
             logger.exception(f"Unexpected error for {base}/{quote}")
             failed.append({"pair": f"{base}/{quote}", "reason": "unexpected error"})
 
+    session.commit()
     return {
         "requested": requested,
         "written": written,

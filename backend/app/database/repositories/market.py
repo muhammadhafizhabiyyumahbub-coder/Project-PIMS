@@ -63,7 +63,6 @@ def upsert_quote(
     currency: str,
     source_timestamp: datetime,
     received_at: datetime,
-    is_realtime: bool,
     feed_status: str,
 ) -> MarketQuote:
     # Check idempotency by asset_id, provider_id, and source_timestamp
@@ -84,8 +83,6 @@ def upsert_quote(
         currency=currency,
         source_timestamp=source_timestamp,
         received_at=received_at,
-        is_realtime=is_realtime,
-        feed_status=feed_status,
         freshness_status=feed_status,
     )
     session.add(quote)
