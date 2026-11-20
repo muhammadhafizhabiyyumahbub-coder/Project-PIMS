@@ -13,8 +13,9 @@ from app.core.logging import configure_logging
 
 
 def run_migrations() -> None:
-    backend_root = Path(__file__).resolve().parents[1]
-    alembic_cfg = Config(backend_root / "alembic.ini")
+    backend_root = Path(__file__).resolve().parent
+    alembic_cfg = Config("backend/alembic.ini")
+    alembic_cfg.set_main_option("script_location", "backend/app/database/migrations")
     alembic_cfg.set_main_option("sqlalchemy.url", get_settings().database_url)
     command.upgrade(alembic_cfg, "head")
 

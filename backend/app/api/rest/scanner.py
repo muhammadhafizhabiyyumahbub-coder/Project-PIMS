@@ -9,6 +9,15 @@ from app.api.envelope import error_response, success_response
 from app.core.db import get_db
 from app.api.schemas.scanner import ScannerConfigCreate, ScannerConfigUpdate
 from app.database.repositories import scanner as repo
+from app.database.models import (
+    Asset,
+    Market,
+    DataProvider,
+    ProviderInstrument,
+    ScannerConfiguration,
+    ScannerResult,
+    ScannerRun,
+)
 
 router = APIRouter(prefix="/scanner", tags=["Scanner"])
 
