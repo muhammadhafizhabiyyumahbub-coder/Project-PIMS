@@ -287,8 +287,10 @@ def latest_close_prices(session: Session, asset_ids: list[uuid.UUID]) -> dict[uu
 
 def closes_in_range(
     session: Session, asset_id: uuid.UUID, timeframe: str, start_at: datetime
-) -> list[tuple[datetime, float]]:
-    """Candle closes from `start_at` onward, oldest first. No provider fetch."""
+) -> list[tuple[datetime, Decimal]]:
+    """Candle closes from `start_at` onward, oldest first. No provider fetch.
+    Returns Decimal; convert to float only if statistical analysis requires it.
+    """
     rows = session.execute(
         select(MarketCandle.open_time, MarketCandle.close_price)
         .where(MarketCandle.asset_id == asset_id)
@@ -296,7 +298,7 @@ def closes_in_range(
         .where(MarketCandle.open_time >= start_at)
         .order_by(MarketCandle.open_time)
     ).all()
-    return [(open_time, float(close_price)) for open_time, close_price in rows]
+    return [(open_time, Decimal(str(close_price))) for open_time, close_price in rows]
 
 
 def add_snapshot(session: Session, **values) -> PortfolioSnapshot:
