@@ -132,7 +132,7 @@ def test_scanner_qualification_endpoint(client, analyzed_universe):
     session = get_session_factory()()
     try:
         btc = session.query(Asset).filter_by(symbol="BTCUSDT").one()
-        scanner_result = _latest_scanner_result(session, btc.id)
+        scanner_result = _latest_scanner_result(session, btc.id, "1h")
         scanner_result_id = scanner_result.id
     finally:
         session.close()

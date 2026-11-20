@@ -67,10 +67,11 @@ def _latest_technical(session: Session, asset_id: str, timeframe: str) -> Techni
 
 
 def _latest_scanner_result(session: Session, asset_id: str, timeframe: str) -> ScannerResult | None:
+    # ScannerResult carries its own timeframe column and links to ScannerRun,
+    # not to AnalyticsRun — filter on the result row itself.
     return (
         session.query(ScannerResult)
-        .join(AnalyticsRun, ScannerResult.scanner_run_id == AnalyticsRun.id)
-        .filter(ScannerResult.asset_id == asset_id, AnalyticsRun.timeframe == timeframe)
+        .filter(ScannerResult.asset_id == asset_id, ScannerResult.timeframe == timeframe)
         .order_by(ScannerResult.created_at.desc())
         .first()
     )

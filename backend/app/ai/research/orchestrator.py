@@ -151,7 +151,9 @@ def run_job(session: Session, job: ResearchJob) -> ResearchJob:
     session.commit()
     
     summary = qualification_summary(readiness)
-    if summary["status"] != "QUALIFIED":
+    # PARTIAL is allowed: it means every required engine passed and only optional
+    # engines are unavailable. STALE/NOT_QUALIFIED do not start an AI run.
+    if summary["status"] in {"NOT_QUALIFIED", "STALE"}:
         advance(
             BLOCKED,
             error_code="ENGINES_NOT_READY",

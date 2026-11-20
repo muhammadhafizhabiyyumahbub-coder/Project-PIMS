@@ -38,7 +38,7 @@ def test_analyzed_universe_qualified(db_session, analyzed_universe):
 
 def test_stale_scanner_marked_stale(db_session, analyzed_universe):
     btc = analyzed_universe["assets"]["BTCUSDT"]
-    scanner_result = service._latest_scanner_result(db_session, btc.id)
+    scanner_result = service._latest_scanner_result(db_session, btc.id, "1h")
     scanner_result.freshness_status = "STALE"
     db_session.commit()
 

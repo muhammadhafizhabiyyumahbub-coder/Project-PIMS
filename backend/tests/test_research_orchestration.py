@@ -22,7 +22,7 @@ def test_fingerprint_changes_when_context_changes(db_session, analyzed_universe)
     btc = analyzed_universe["assets"]["BTCUSDT"]
     first = orchestrator.context_fingerprint(build_context(db_session, btc, "1h"))
 
-    result = service._latest_scanner_result(db_session, btc.id)
+    result = service._latest_scanner_result(db_session, btc.id, "1h")
     result.score = 99.0
     db_session.commit()
 
@@ -42,7 +42,7 @@ def test_job_blocked_when_required_engines_not_ready(db_session, seeded_universe
 
 def test_no_report_when_scanner_stale(db_session, analyzed_universe):
     btc = analyzed_universe["assets"]["BTCUSDT"]
-    service._latest_scanner_result(db_session, btc.id).freshness_status = "STALE"
+    service._latest_scanner_result(db_session, btc.id, "1h").freshness_status = "STALE"
     db_session.commit()
 
     request, job, _ = orchestrator.create_request(db_session, btc, "1h")
