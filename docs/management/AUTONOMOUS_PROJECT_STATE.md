@@ -10,8 +10,8 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `354b768` (roadmap) | `git log --oneline -1` |
-| Backend test | **190 passed, 0 failed** | `pytest -q` (PostgreSQL 17 lokal) |
+| Commit terakhir | `b825565` | `git log --oneline -1` |
+| Backend test | **197 passed, 0 failed** | `pytest -q` (PostgreSQL 17 lokal) |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
 | Migration head | `dcadf6176257` | `alembic current` |
 | Endpoint terpasang | 46 operasi (40 path) dari 54 di `api-spec.md` | openapi vs spec diff |
@@ -38,9 +38,10 @@
 
 ## 4. Bug/weakness yang diketahui (jujur)
 
-- **SELESAI:** regresi Stage V (`NameError: ScannerResult`) dan bug path alembic sudah diperbaiki (`8307b86`, `e8d7c52`); suite serial **193 passed, 0 failed**.
-- **AKTIF (ronde berjalan):** (a) melengkapi test Stage V (fx constraint, quote-dengan-data/freshness, JSONB 422, 404, no-float); (b) 3 cacat qualification: gate `READY but FAILED`, `volatility=None` dianggap 0 → RISK PASSED, dan timeframe risk/scanner tidak difilter.
-- **Aturan proses:** JANGAN menjalankan `pytest` bersamaan dengan ronde OpenCode — keduanya memakai DB `pims_test` dan menyebabkan `ForeignKeyViolation`/`UniqueViolation` palsu (pernah terjadi; saya sendiri yang menyebabkannya). Semua test DB harus serial.
+- **SELESAI (`790f25d`, `b825565`):** (a) cacat qualification tertutup — `_latest_scanner_result` join ke tabel salah (`AnalyticsRun` via `scanner_run_id`; seharusnya kolom `ScannerResult.timeframe` sendiri) sehingga selalu `None`; gate riset memblokir `PARTIAL` (kini blokir hanya `STALE`/`NOT_QUALIFIED`); `volatility=None` tidak lagi dianggap 0; risk/scanner sudah difilter timeframe. (b) test tambahan: 3 gate (READY+FAILED diblokir, volatility NULL, timeframe mismatch) + 4 Stage V (constraint `fx_rates`, freshness quote, `parse_float` anti-float, validasi scanner config 422/404).
+- **Baseline sekarang: 197 passed, 0 failed** (suite serial, `b825565`).
+- **Utang teknis tercatat:** `backend/app/api/rest/scanner.py:100` memakai `payload.dict(...)` (deprecated Pydantic V2) → ganti `payload.model_dump()`.
+- **Aturan proses:** (1) JANGAN menjalankan `pytest` bersamaan dengan ronde OpenCode — sama-sama memakai DB `pims_test` dan menghasilkan `ForeignKeyViolation`/`UniqueViolation` palsu. (2) OpenCode dilarang `git checkout <sha>`: dulu commit-nya jatuh di detached HEAD sehingga cron push gagal (`'HEAD:refs/heads/HEAD'`); kerja selalu di branch `master`.
 
 - `market_quotes`/`fx_rates`/`scanner_configurations`: **dibuat di Stage V** (`d2dcc981c45c`), tetapi ingestion quote/FX belum ada → endpoint baca bisa kosong (`data: null` + `UNAVAILABLE`) sampai job ingestion dibuat.
 - `watchlists`: 6 endpoint di `api-spec` tanpa tabel di `schema-spec` → **konflik dokumen**, belum dikerjakan.
