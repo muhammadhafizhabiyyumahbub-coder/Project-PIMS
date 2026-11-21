@@ -1,6 +1,6 @@
 # PIMS — Autonomous Project State
 
-**Diperbarui:** 2026-11-19 (Hermes sebagai Project Director, OpenCode sebagai implementasi)
+**Diperbarui:** 2026-11-21 (Hermes sebagai Project Director, OpenCode sebagai implementasi)
 **Repo:** `D:/personal-investment-management-system` · branch `master` · remote SSH `git@github.com:muhammadhafizhabiyyumahbub-coder/Project-PIMS.git`
 **Status:** V1 Release Candidate + pengembangan lanjutan (roadmap baru)
 
@@ -10,8 +10,9 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `141c3b8` | `git log --oneline -1` |
+| Commit terakhir | `19ac421` | `git log --oneline -1` |
 | Backend test | **213 passed, 0 failed** | `pytest -q` (PostgreSQL 17 lokal) |
+| Bug P0 terbuka | `POST /scanner/run` → 500 (`NameError: run_scanner`) | `curl -X POST /api/v1/scanner/run` |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
 | Migration head | `dcadf6176257` | `alembic current` |
 | Endpoint terpasang | 46 operasi (40 path) dari 54 di `api-spec.md` | openapi vs spec diff |
@@ -40,7 +41,7 @@
 
 - **SELESAI (`141c3b8`): schema drift + FX commit.** `MarketQuote` punya `is_realtime`/`feed_status` yang **tidak ada di `schema-spec` §6.1** dan tidak dibuat migrasi mana pun → INSERT/SELECT ORM gagal di DB nyata (API `/market-data/quotes` sempat **500**). Kolom karangan dihapus dari model/repo/endpoint; `is_realtime` kini konstanta properti feed di response. `ingest_fx_rates` tidak pernah `commit()` → `fx_rates` kosong walau laporan `written: 1`; sudah diperbaiki dan diverifikasi (`fx_rates` = 1, USD/IDR 18158.0). Test anti-drift baru: `backend/tests/test_model_drift.py` (kolom model vs spec) + test persistensi FX lewat koneksi baru.
 - **Baseline sekarang: 208 passed, 0 failed** (suite serial). Verifikasi nyata: `GET /market-data/quotes` 200, `last 58849.37 USD`, `freshness_status LIVE`, `is_realtime false`.
-- **SELESAI (`??`): candle ingestion CLI + schedule.** `python -m app.data.ingestion.candles --timeframe 1h --limit 300` memakai `refresh_asset_candles` (resolve simbol lewat `provider_instruments`, aset tanpa mapping → `skipped` + alasan, 404 → `skipped`, error transport → `failed`, JSON ringkas satu baris). Bukti nyata: `written: 960` untuk BTCUSDT/ETHUSDT/SOLUSDT dari Yahoo, `skipped: 3` (B2/B3/B4). Test `test_candle_ingestion.py` 5 buah (sukses, tanpa mapping, simbol provider benar-benar dipakai, 404→skipped, error transport→failed).
+- **SELESAI (`19ac421`): candle ingestion CLI + schedule.** `python -m app.data.ingestion.candles --timeframe 1h --limit 300` memakai `refresh_asset_candles` (resolve simbol lewat `provider_instruments`, aset tanpa mapping → `skipped` + alasan, 404 → `skipped`, error transport → `failed`, JSON ringkas satu baris). Bukti nyata: `written: 960` untuk BTCUSDT/ETHUSDT/SOLUSDT dari Yahoo, `skipped: 3` (B2/B3/B4). Test `test_candle_ingestion.py` 5 buah (sukses, tanpa mapping, simbol provider benar-benar dipakai, 404→skipped, error transport→failed).
 - **Cron per jam sekarang menjalankan candles → quotes → FX** (`ingest-pims-market-data-hourly`), tetap pola watchdog: hanya bersuara bila ada `failed` atau `written == 0`.
 - **Baseline sekarang: 213 passed, 0 failed** (suite serial). Verifikasi nyata: valuation portfolio `COMPLETE` dengan harga pasar asli (`BTCUSDT 58989.96875`, `total_value 118777.9375`), halaman `/portfolios` + `/portfolios/[id]` + `/scanner` render di browser lewat `127.0.0.1` maupun `localhost`, `next build` hijau, `eslint` 0 error.
 - **Pelajaran penting (jangan diulang):** DB test dibangun dari model, jadi **test hijau tidak membuktikan DB nyata sinkron dengan migrasi**. Setiap perubahan model wajib diuji terhadap DB nyata (`pims`), bukan hanya `pims_test`.
