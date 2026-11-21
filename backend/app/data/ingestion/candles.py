@@ -1,9 +1,13 @@
 import argparse
 import json
+import logging
+from datetime import datetime, timezone
 from httpx import HTTPStatusError
 from app.core.db import get_session_factory
 from app.data.ingestion.ingest import refresh_asset_candles, resolve_provider
 from app.database.models import Asset, ProviderInstrument
+
+logger = logging.getLogger(__name__)
 
 def ingest_candles(timeframe: str = "1h", limit: int = 300) -> dict:
     session_factory = get_session_factory()
@@ -16,7 +20,6 @@ def ingest_candles(timeframe: str = "1h", limit: int = 300) -> dict:
         provider, adapter = resolve_provider(session)
         
         all_active_crypto = session.query(Asset).filter_by(is_active=True, asset_type="CRYPTO").all()
-        # Filter for those with mappings
         mapping_query = session.query(ProviderInstrument).filter_by(provider_id=provider.id, is_active=True)
         mappings = {m.asset_id: m for m in mapping_query.all()}
         

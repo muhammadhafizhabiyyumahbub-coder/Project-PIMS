@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.envelope import error_response, success_response
 from app.core.db import get_db
 from app.api.schemas.scanner import ScannerConfigCreate, ScannerConfigUpdate
+from app.engines.scanner.service import run_scanner
 from app.database.repositories import scanner as repo
 from app.database.models import (
     Asset,
