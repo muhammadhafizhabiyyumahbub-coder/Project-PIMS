@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
+  // Next 16 blocks dev requests whose origin is not localhost; without this the
+  // app hangs on "Loading..." when opened via http://127.0.0.1:3000.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   async rewrites() {
     // Dev proxy: keep browser same-origin so no CORS setup is needed on the API.
     const api = process.env.PIMS_API_URL ?? "http://localhost:8000";
