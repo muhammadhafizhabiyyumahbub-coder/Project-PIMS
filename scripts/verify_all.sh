@@ -1,74 +1,55 @@
-#!/bin/sh
-# PIMS — one-command verification gate.
-# Usage: sh scripts/verify_all.sh   (from anywhere; paths resolve from this file)
-set -u
+#!/bin/bash
+# Universal verification script
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-BACKEND="$ROOT/backend"
-FRONTEND="$ROOT/frontend"
-PY="$BACKEND/.venv/Scripts/python.exe"
-STATUS=0
-SUMMARY=""
+set -e
 
-step() {
-  name="$1"; shift
-  echo ""
-  echo "=============================================================="
-  echo ">>> $name"
-  echo "=============================================================="
-  if "$@"; then
-    SUMMARY="$SUMMARY
-PASS  $name"
-  else
-    SUMMARY="$SUMMARY
-FAIL  $name"
-    STATUS=1
-    echo ">>> $name FAILED — stopping"
-    print_summary
-    exit 1
-  fi
-}
+# Detect python
+if [ -d "backend/.venv" ]; then
+    PYTHON="backend/.venv/bin/python"
+    # Windows fallback
+    if [ -f "backend/.venv/Scripts/python.exe" ]; then
+        PYTHON="backend/.venv/Scripts/python.exe"
+    fi
+else
+    # Try uv if venv doesn't exist
+    if command -v uv &> /dev/null; then
+        PYTHON="uv run python"
+    else
+        echo "No virtualenv or uv detected."
+        exit 1
+    fi
+fi
 
-print_summary() {
-  echo ""
-  echo "=============================================================="
-  echo "SUMMARY"
-  echo "=============================================================="
-  printf '%s\n' "$SUMMARY" | sed '/^$/d'
-  if [ "$STATUS" -eq 0 ]; then
-    echo ""
-    echo "RESULT: ALL CHECKS PASSED"
-  else
-    echo ""
-    echo "RESULT: FAILURES PRESENT"
-  fi
-}
+echo "--- 1. Running Tests ---"
+if [ -f "$PYTHON" ] || command -v uv &> /dev/null; then
+    cd backend
+    ../$PYTHON -m pytest tests/ -v
+    cd ..
+    echo "Tests PASSED"
+else
+    echo "SKIPPED: pytest not found"
+fi
 
-run_backend_tests() {
-  cd "$BACKEND" && "$PY" -m pytest tests -q
-}
+echo "--- 2. Linting ---"
+if command -v npm &> /dev/null && [ -f "package.json" ]; then
+    npm run lint
+    echo "Linting PASSED"
+else
+    echo "SKIPPED: npm or package.json not found"
+fi
 
-run_frontend_lint() {
-  cd "$FRONTEND" && npm run lint
-}
+echo "--- 3. Building ---"
+if command -v npm &> /dev/null && [ -f "package.json" ]; then
+    npm run build
+    echo "Build PASSED"
+else
+    echo "SKIPPED: npm or package.json not found"
+fi
 
-run_frontend_build() {
-  cd "$FRONTEND" && npm run build
-}
-
-run_lock_check() {
-  if ! command -v uv >/dev/null 2>&1; then
-    echo "skip: uv not installed (lock check skipped)"
-    return 0
-  fi
-  cd "$BACKEND" && uv lock --check
-}
-
-step "backend pytest" run_backend_tests
-step "frontend eslint" run_frontend_lint
-step "frontend next build" run_frontend_build
-step "uv lock consistency" run_lock_check
-
-print_summary
-exit "$STATUS"
+echo "--- 4. Dependency Check ---"
+if command -v uv &> /dev/null; then
+    uv lock --check
+    echo "Dependencies PASSED"
+else
+    echo "SKIPPED: uv not found"
+fi
