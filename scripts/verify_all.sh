@@ -31,25 +31,34 @@ else
 fi
 
 echo "--- 2. Linting ---"
-if command -v npm &> /dev/null && [ -f "package.json" ]; then
+if command -v npm &> /dev/null && [ -f "frontend/package.json" ]; then
+    cd frontend
     npm run lint
+    cd ..
     echo "Linting PASSED"
 else
-    echo "SKIPPED: npm or package.json not found"
+    echo "SKIPPED: npm or package.json not found in frontend/"
+    exit 1
 fi
 
 echo "--- 3. Building ---"
-if command -v npm &> /dev/null && [ -f "package.json" ]; then
+if command -v npm &> /dev/null && [ -f "frontend/package.json" ]; then
+    cd frontend
     npm run build
+    cd ..
     echo "Build PASSED"
 else
-    echo "SKIPPED: npm or package.json not found"
+    echo "SKIPPED: npm or package.json not found in frontend/"
+    exit 1
 fi
 
 echo "--- 4. Dependency Check ---"
 if command -v uv &> /dev/null; then
+    cd backend
     uv lock --check
+    cd ..
     echo "Dependencies PASSED"
 else
     echo "SKIPPED: uv not found"
+    exit 1
 fi

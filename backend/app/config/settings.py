@@ -1,11 +1,19 @@
 """Application configuration via environment variables."""
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Locate .env at repo root (parent of backend/)
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_ENV_PATH = _REPO_ROOT / ".env"
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PIMS_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="PIMS_",
+        env_file=str(_ENV_PATH) if _ENV_PATH.exists() else None,
+        extra="ignore"
+    )
 
     environment: str = "development"
     log_level: str = "INFO"
@@ -34,7 +42,6 @@ class Settings(BaseSettings):
     # research per scanner result until explicitly enabled).
     research_scanner_trigger_enabled: bool = False
     research_min_scanner_score: float = 80.0
-
 
 @lru_cache
 def get_settings() -> Settings:
