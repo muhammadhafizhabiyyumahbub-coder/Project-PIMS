@@ -13,6 +13,12 @@ from app.database.models import Asset, ResearchJob, ResearchReport, ResearchRequ
 
 router = APIRouter(prefix="/research", tags=["Research"])
 
+def parse_uuid(value: str):
+    try:
+        return uuid.UUID(value)
+    except (ValueError, AttributeError):
+        return None
+
 
 class ResearchRequestBody(BaseModel):
     symbol: str = Field(min_length=1)
@@ -67,7 +73,10 @@ def create_research_request(body: ResearchRequestBody, db: Session = Depends(get
 
 @router.get("/requests/{request_id}")
 def get_research_request(request_id: str, db: Session = Depends(get_db)):
-    request = db.get(ResearchRequest, request_id)
+    rid = parse_uuid(request_id)
+    if rid is None:
+        return error_response("NOT_FOUND", f"request {request_id} not found", 404)
+    request = db.get(ResearchRequest, rid)
     if request is None:
         return error_response("NOT_FOUND", f"request {request_id} not found", 404)
     jobs = (
@@ -90,7 +99,10 @@ def get_research_request(request_id: str, db: Session = Depends(get_db)):
 
 @router.get("/reports/{report_id}")
 def get_research_report(report_id: str, db: Session = Depends(get_db)):
-    report = db.get(ResearchReport, report_id)
+    rid = parse_uuid(report_id)
+    if rid is None:
+        return error_response("NOT_FOUND", f"report {report_id} not found", 404)
+    report = db.get(ResearchReport, rid)
     if report is None:
         return error_response("NOT_FOUND", f"report {report_id} not found", 404)
     return success_response(

@@ -1,4 +1,4 @@
-"Scanner endpoints per api-spec §16 (read-only: categories, results, runs; plus existing POST /run)."
+"Scanner endpoints per api-spec A 16 (read-only: categories, results, runs; plus existing POST /run)."
 import uuid
 from decimal import Decimal
 
@@ -22,7 +22,13 @@ from app.database.models import (
 
 router = APIRouter(prefix="/scanner", tags=["Scanner"])
 
-# api-spec §16.2 scanner categories
+def parse_uuid(value: str):
+    try:
+        return uuid.UUID(value)
+    except (ValueError, AttributeError):
+        return None
+
+# api-spec A 16.2 scanner categories
 SCANNER_CATEGORIES = [
     "TECHNICAL",
     "MOMENTUM",
@@ -33,7 +39,6 @@ SCANNER_CATEGORIES = [
     "ANOMALY",
     "CORRELATION",
 ]
-
 
 @router.post("/run")
 def scanner_run(timeframe: str = "1h", db: Session = Depends(get_db)):
@@ -49,12 +54,10 @@ def scanner_run(timeframe: str = "1h", db: Session = Depends(get_db)):
         }
     )
 
-
 @router.get("/categories")
 def scanner_categories():
-    """Supported scanner categories per api-spec §16.2."""
+    """Supported scanner categories per api-spec A 16.2."""
     return success_response(SCANNER_CATEGORIES, meta={"count": len(SCANNER_CATEGORIES)})
-
 
 # Scanner Config endpoints
 @router.post("/configurations")
@@ -73,7 +76,6 @@ def create_config(
     db.commit()
     return success_response({"id": str(config.id)})
 
-
 @router.get("/configurations")
 def list_configs(db: Session = Depends(get_db)):
     configs = repo.list_scanner_configs(db)
@@ -86,12 +88,10 @@ def list_configs(db: Session = Depends(get_db)):
         } for c in configs
     ])
 
-
 @router.patch("/configurations/{config_id}")
 def update_config(config_id: str, payload: ScannerConfigUpdate, db: Session = Depends(get_db)):
-    try:
-        cid = uuid.UUID(config_id)
-    except (ValueError, AttributeError):
+    cid = parse_uuid(config_id)
+    if cid is None:
         return error_response("NOT_FOUND", "not found", 404)
         
     config = repo.get_scanner_config(db, cid)
@@ -102,12 +102,10 @@ def update_config(config_id: str, payload: ScannerConfigUpdate, db: Session = De
     db.commit()
     return success_response({"id": str(config.id)})
 
-
 @router.delete("/configurations/{config_id}")
 def delete_config(config_id: str, db: Session = Depends(get_db)):
-    try:
-        cid = uuid.UUID(config_id)
-    except (ValueError, AttributeError):
+    cid = parse_uuid(config_id)
+    if cid is None:
         return error_response("NOT_FOUND", "not found", 404)
         
     config = repo.get_scanner_config(db, cid)
@@ -118,7 +116,6 @@ def delete_config(config_id: str, db: Session = Depends(get_db)):
     db.commit()
     return success_response(None)
 
-
 @router.get("/results")
 def scanner_results(
     scanner_run_id: str | None = Query(None, description="Filter by run UUID"),
@@ -126,12 +123,11 @@ def scanner_results(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    """Retrieve scanner results per api-spec §16.1."""
+    """Retrieve scanner results per api-spec A 16.1."""
     query = db.query(ScannerResult).order_by(ScannerResult.created_at.desc())
     if scanner_run_id:
-        try:
-            rid = uuid.UUID(scanner_run_id)
-        except (ValueError, AttributeError):
+        rid = parse_uuid(scanner_run_id)
+        if rid is None:
             return error_response("NOT_FOUND", f"scanner run {scanner_run_id} not found", 404)
         query = query.filter(ScannerResult.scanner_run_id == rid)
     results = query.limit(limit).all()
@@ -158,13 +154,11 @@ def scanner_results(
         })
     return success_response(rows, meta={"count": len(rows)})
 
-
 @router.get("/runs/{run_id}")
 def get_scanner_run(run_id: str, db: Session = Depends(get_db)):
     """Retrieve scanner run detail and summary metrics."""
-    try:
-        rid = uuid.UUID(run_id)
-    except (ValueError, AttributeError):
+    rid = parse_uuid(run_id)
+    if rid is None:
         return error_response("NOT_FOUND", f"scanner run {run_id} not found", 404)
     run = db.get(ScannerRun, rid)
     if run is None:
@@ -183,7 +177,6 @@ def get_scanner_run(run_id: str, db: Session = Depends(get_db)):
         "execution_metadata": run.execution_metadata,
     })
 
-
 @router.get("/results/{result_id}/qualification")
 def result_qualification(result_id: str, db: Session = Depends(get_db)):
     from app.api.rest.dashboard import _opportunity
@@ -194,10 +187,11 @@ def result_qualification(result_id: str, db: Session = Depends(get_db)):
         qualification_summary,
     )
 
-    result = db.get(ScannerResult, result_id)
+    rid = parse_uuid(result_id)
+    if rid is None:
+        return error_response("NOT_FOUND", f"scanner result {result_id} not found", 404)
+    result = db.get(ScannerResult, rid)
     if result is None:
-        from app.api.envelope import error_response
-
         return error_response("NOT_FOUND", f"scanner result {result_id} not found", 404)
     asset = db.get(Asset, result.asset_id)
     market = db.get(Market, asset.market_id) if asset.market_id else None
