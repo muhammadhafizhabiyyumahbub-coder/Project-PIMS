@@ -18,7 +18,7 @@ services:
   backend:
     build: ./backend
     environment:
-      PIMS_DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/pims
+      PIMS_DATABASE_URL: postgresql+psycopg://postgres:password@db:5432/pims
       PIMS_CRYPTO_PROVIDER: ${PIMS_CRYPTO_PROVIDER:-YAHOO}
       PIMS_LLM_BASE_URL: ${PIMS_LLM_BASE_URL:-}
       PIMS_LLM_API_KEY: ${PIMS_LLM_API_KEY:-}

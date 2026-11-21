@@ -2,10 +2,12 @@
 import os
 from pathlib import Path
 
-os.environ.setdefault(
-    "PIMS_DATABASE_URL",
-    "postgresql+psycopg://postgres:postgres@localhost:5432/pims_test",
-)
+if "PIMS_DATABASE_URL" not in os.environ:
+    raise RuntimeError(
+        "PIMS_DATABASE_URL environment variable is not set. "
+        "Please create a .env file with your test database URL. "
+        "See .env.example for format."
+    )
 
 import pytest
 

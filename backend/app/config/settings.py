@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     environment: str = "development"
     log_level: str = "INFO"
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/pims"
+    database_url: str = "postgresql+psycopg://postgres@localhost:5432/pims"
 
     bybit_base_url: str = "https://api.bybit.com"
     bybit_api_key: str = ""
