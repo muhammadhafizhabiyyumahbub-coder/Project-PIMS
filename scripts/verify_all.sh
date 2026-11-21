@@ -22,6 +22,7 @@ fi
 
 echo "--- 1. Running Tests ---"
 if [ -f "$PYTHON" ] || command -v uv &> /dev/null; then
+    export PIMS_DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/pims_test"
     cd backend
     ../$PYTHON -m pytest tests/ -v
     cd ..
