@@ -1,6 +1,9 @@
 "Shared fixtures: test database, universe, synthetic candles, analyzed pipeline."
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
 if "PIMS_DATABASE_URL" not in os.environ:
     raise RuntimeError(
