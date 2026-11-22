@@ -19,6 +19,7 @@ class MockTransport:
                 return httpx.Response(200, json=payload, request=request)
         return httpx.Response(404, json={"chart": {"error": {"description": "Not found"}}}, request=request)
 
+
 def _get_or_create_provider(db_session):
     p = db_session.query(DataProvider).filter_by(code="YAHOO").first()
     if not p:
@@ -26,6 +27,7 @@ def _get_or_create_provider(db_session):
         db_session.add(p)
         db_session.commit()
     return p
+
 
 def test_ingest_candles_success(db_session):
     provider = _get_or_create_provider(db_session)
@@ -62,13 +64,12 @@ def test_ingest_candles_success(db_session):
     assert isinstance(candle.close_price, Decimal)
     assert candle.close_price == Decimal("50500.0")
 
+
 def test_ingest_candles_no_mapping(db_session):
     _get_or_create_provider(db_session)
-    # Ensure this test doesn't look at mappings for other assets
     res = ingest_candles()
-    # If other assets have mappings, they are skipped too, that's fine.
-    # We just need to check if our skip logic works generally.
     assert isinstance(res["skipped_reasons"], list)
+
 
 def test_ingest_candles_requests_provider_symbol(db_session):
     """The provider must be asked for the mapped symbol, not the internal one."""
@@ -92,6 +93,7 @@ def test_ingest_candles_requests_provider_symbol(db_session):
     
     assert any("MAPPED_SYMBOL" in str(r.url) for r in transport.requests)
 
+
 def test_ingest_candles_provider_404_is_skipped(db_session):
     provider = _get_or_create_provider(db_session)
     asset = Asset(symbol="404_TEST", name="404 Asset", asset_type="CRYPTO", quote_currency="USD", is_active=True)
@@ -104,6 +106,7 @@ def test_ingest_candles_provider_404_is_skipped(db_session):
         
     res = ingest_candles()
     assert any("404" in r["reason"] or "not offer" in r["reason"] for r in res["skipped_reasons"])
+
 
 def test_ingest_candles_transport_error_is_failed(db_session):
     provider = _get_or_create_provider(db_session)
@@ -128,3 +131,172 @@ def test_ingest_candles_transport_error_is_failed(db_session):
     
     assert res["failed"]
     assert "Connection failed" in res["failed"][0]["reason"]
+
+
+# === New retry tests ===
+
+class RetryMockTransport:
+    """Mock transport that can simulate retries by tracking call counts per symbol."""
+    def __init__(self, responses: dict[str, list]):
+        self.responses = responses
+        self.call_counts = {k: 0 for k in responses}
+        self.requests = []
+
+    def handle_request(self, request):
+        self.requests.append(request)
+        url = str(request.url)
+        for pattern, response_list in self.responses.items():
+            if pattern in url:
+                idx = self.call_counts.get(pattern, 0)
+                self.call_counts[pattern] = idx + 1
+                if idx < len(response_list):
+                    resp = response_list[idx]
+                    if isinstance(resp, int):
+                        return httpx.Response(resp, json={"chart": {"error": {"description": f"Status {resp}"}}}, request=request)
+                    return httpx.Response(200, json=resp, request=request)
+        return httpx.Response(404, json={"chart": {"error": {"description": "Not found"}}}, request=request)
+
+
+def test_candle_ingestion_retry_429_then_200(db_session):
+    """429 on first attempt then 200 -> row written, retry proven (assert request count > 1)."""
+    provider = _get_or_create_provider(db_session)
+    asset = Asset(symbol="RETRY_429", name="Retry 429", asset_type="CRYPTO", quote_currency="USD", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+    
+    with db_session.no_autoflush:
+        pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-429", is_active=True)
+        db_session.add(pi)
+        db_session.commit()
+
+    payload = {
+        "chart": {
+            "result": [{
+                "timestamp": [int(datetime.now(timezone.utc).timestamp())],
+                "indicators": {"quote": [{"open": [50000.0], "high": [51000.0], "low": [49000.0], "close": [50500.0], "volume": [1000.0]}]}
+            }]
+        }
+    }
+    transport = RetryMockTransport({"RETRY-429": [429, payload]})
+    
+    import app.data.ingestion.ingest as ing
+    orig = ing.YahooProvider
+    ing.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+    
+    res = ingest_candles()
+    ing.YahooProvider = orig
+
+    assert res["written"] == 1
+    assert len(transport.requests) == 2  # retry happened
+
+
+def test_candle_ingestion_retry_500_twice_then_200(db_session):
+    """500 twice then 200 -> row written, retry proven."""
+    provider = _get_or_create_provider(db_session)
+    asset = Asset(symbol="RETRY_500", name="Retry 500", asset_type="CRYPTO", quote_currency="USD", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+    
+    with db_session.no_autoflush:
+        pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-500", is_active=True)
+        db_session.add(pi)
+        db_session.commit()
+
+    payload = {
+        "chart": {
+            "result": [{
+                "timestamp": [int(datetime.now(timezone.utc).timestamp())],
+                "indicators": {"quote": [{"open": [50000.0], "high": [51000.0], "low": [49000.0], "close": [50500.0], "volume": [1000.0]}]}
+            }]
+        }
+    }
+    transport = RetryMockTransport({"RETRY-500": [500, 500, payload]})
+    
+    import app.data.ingestion.ingest as ing
+    orig = ing.YahooProvider
+    ing.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+    
+    res = ingest_candles()
+    ing.YahooProvider = orig
+
+    assert res["written"] == 1
+    assert len(transport.requests) == 3  # 2 retries + 1 success
+
+
+def test_candle_ingestion_retry_429_continuous_fails(db_session):
+    """429 continuously -> failed with real reason, attempt count matches limit, no hang."""
+    provider = _get_or_create_provider(db_session)
+    asset = Asset(symbol="RETRY_429_FAIL", name="Retry 429 Fail", asset_type="CRYPTO", quote_currency="USD", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+    
+    with db_session.no_autoflush:
+        pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-429-FAIL", is_active=True)
+        db_session.add(pi)
+        db_session.commit()
+
+    transport = RetryMockTransport({"RETRY-429-FAIL": [429, 429, 429]})  # 3 retries = 3 attempts
+    
+    import app.data.ingestion.ingest as ing
+    orig = ing.YahooProvider
+    ing.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+    
+    res = ingest_candles()
+    ing.YahooProvider = orig
+
+    assert res["failed"]
+    assert "429" in res["failed"][0]["reason"]
+    assert len(transport.requests) == 3  # exactly 3 attempts (default retries=3)
+
+
+def test_candle_ingestion_404_no_retry(db_session):
+    """404 -> skipped, NO retry (assert request count == 1)."""
+    provider = _get_or_create_provider(db_session)
+    asset = Asset(symbol="RETRY_404", name="Retry 404", asset_type="CRYPTO", quote_currency="USD", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+    
+    with db_session.no_autoflush:
+        pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-404", is_active=True)
+        db_session.add(pi)
+        db_session.commit()
+
+    transport = RetryMockTransport({})  # no payload -> 404
+    
+    import app.data.ingestion.ingest as ing
+    orig = ing.YahooProvider
+    ing.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+    
+    res = ingest_candles()
+    ing.YahooProvider = orig
+
+    assert res["skipped"] >= 1
+    assert any("not offer" in r["reason"] or "404" in r["reason"] for r in res["skipped_reasons"])
+    assert len(transport.requests) == 1  # no retry for 404
+
+
+def test_candle_ingestion_transport_error_failed(db_session):
+    """transport error -> failed with real message."""
+    provider = _get_or_create_provider(db_session)
+    asset = Asset(symbol="RETRY_TRANSPORT", name="Retry Transport", asset_type="CRYPTO", quote_currency="USD", is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+    
+    with db_session.no_autoflush:
+        pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-TRANSPORT", is_active=True)
+        db_session.add(pi)
+        db_session.commit()
+
+    class FailingTransport:
+        def handle_request(self, request):
+            raise httpx.ConnectError("connection reset by peer")
+            
+    import app.data.ingestion.ingest as ing
+    orig = ing.YahooProvider
+    ing.YahooProvider = lambda *a, **kw: orig(base_url="http://fail", transport=FailingTransport())
+    
+    res = ingest_candles()
+    ing.YahooProvider = orig
+    
+    assert res["failed"]
+    assert "connection reset by peer" in res["failed"][0]["reason"]

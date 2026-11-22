@@ -8,7 +8,6 @@ import httpx
 from app.database.models import Asset, DataProvider, MarketQuote, FXRate, ProviderInstrument
 from app.data.ingestion.quotes import ingest_quotes, ingest_fx_rates
 
-
 class MockTransport:
     """Mock transport that returns controlled Yahoo payloads."""
     def __init__(self, payloads: dict[str, dict]):
@@ -32,8 +31,33 @@ class MockTransport:
         )
 
 
+class RetryMockTransport:
+    """Mock transport that can simulate retries by tracking call counts per symbol."""
+    def __init__(self, responses: dict[str, list]):
+        self.responses = responses
+        self.call_counts = {k: 0 for k in responses}
+        self.requests = []
+
+    def handle_request(self, request):
+        self.requests.append(request)
+        url = str(request.url)
+        for pattern, response_list in self.responses.items():
+            if pattern in url:
+                idx = self.call_counts.get(pattern, 0)
+                self.call_counts[pattern] = idx + 1
+                if idx < len(response_list):
+                    resp = response_list[idx]
+                    if isinstance(resp, int):
+                        return httpx.Response(resp, json={"chart": {"error": {"description": f"Status {resp}"}}}, request=request)
+                    return httpx.Response(200, json=resp, request=request)
+        return httpx.Response(
+            status_code=404,
+            json={"chart": {"error": {"description": "Not found"}}},
+            request=request,
+        )
+
+
 def test_ingest_quotes_success(db_session):
-    # Setup asset
     provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
     db_session.add(provider)
     asset = Asset(
@@ -78,12 +102,11 @@ def test_ingest_quotes_success(db_session):
     iq.YahooProvider = orig
 
     assert res["written"] == 1
-    # Check that transport was called with "BTC-USD"
     assert any("BTC-USD" in str(r.url) for r in transport.requests)
 
     quote = db_session.query(MarketQuote).filter_by(asset_id=asset.id).one()
     assert quote.last_price == Decimal("50500.0")
-    assert quote.currency == "USD"  # Currency from provider meta, not asset.quote_currency
+    assert quote.currency == "USD"
     assert quote.source_timestamp is not None
     assert quote.freshness_status in ("LIVE", "STALE", "UNKNOWN")
     assert quote.provider_id == provider.id
@@ -105,7 +128,7 @@ def test_ingest_quotes_provider_failure(db_session):
     db_session.add(pi)
     db_session.commit()
 
-    transport = MockTransport({})  # no payload → 404
+    transport = MockTransport({})
 
     import app.data.ingestion.quotes as iq
     orig = iq.YahooProvider
@@ -201,7 +224,7 @@ def test_ingest_quotes_idempotent(db_session):
 
     count = db_session.query(MarketQuote).filter_by(asset_id=asset.id).count()
     assert count == 1
-    assert res2["written"] == 1  # same row returned
+    assert res2["written"] == 1
 
 
 def test_ingest_quotes_freshness_stale(db_session):
@@ -264,7 +287,6 @@ def test_ingest_quotes_without_mapping_skipped(db_session):
     )
     db_session.add(asset)
     db_session.commit()
-    # No provider instrument mapping!
 
     res = ingest_quotes(db_session)
     assert res["written"] == 0
@@ -348,7 +370,6 @@ def test_ingest_fx_reverse_skipped(db_session):
     db_session.add(provider)
     db_session.commit()
 
-    # Only provide IDR→USD, not USD→IDR
     now = datetime.now(UTC)
     payload = {
         "chart": {
@@ -370,7 +391,6 @@ def test_ingest_fx_reverse_skipped(db_session):
     res = ingest_fx_rates(db_session, pairs=[("USD", "IDR")])
     iq.YahooProvider = orig
 
-    # Should skip because the provider has no USD/IDR direction; never invert.
     assert res["written"] == 0
     assert res["skipped"] == 1
     assert res["failed"] == []
@@ -381,7 +401,6 @@ def test_ingest_fx_reverse_skipped(db_session):
 
 
 def test_ingest_fx_unexpected_error_failed(db_session):
-    """A transport error is a failure, never a silent skip."""
     provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="FX")
     db_session.add(provider)
     db_session.commit()
@@ -405,3 +424,256 @@ def test_ingest_fx_unexpected_error_failed(db_session):
     assert res["failed"][0]["reason"] != ""
     count = db_session.query(FXRate).count()
     assert count == 0
+
+
+# === New retry tests ===
+
+def test_quotes_ingestion_retry_429_then_200(db_session):
+    """429 on first attempt then 200 -> row written, retry proven (assert request count > 1)."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    asset = Asset(
+        symbol="RETRY429",
+        name="Retry 429",
+        asset_type="CRYPTO",
+        quote_currency="USDT",
+        is_active=True,
+    )
+    db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-429")
+    db_session.add(pi)
+    db_session.commit()
+
+    now = datetime.now(UTC)
+    payload = {
+        "chart": {
+            "result": [{
+                "meta": {"currency": "USD"},
+                "timestamp": [int(now.timestamp())],
+                "indicators": {
+                    "quote": [{
+                        "open": [50000.0],
+                        "high": [51000.0],
+                        "low": [49000.0],
+                        "close": [50500.0],
+                        "volume": [1000.0],
+                    }]
+                }
+            }],
+            "error": None
+        }
+    }
+    transport = RetryMockTransport({"RETRY-429": [429, payload]})
+
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+
+    res = ingest_quotes(db_session)
+    iq.YahooProvider = orig
+
+    assert res["written"] == 1
+    assert len(transport.requests) == 2
+
+
+def test_quotes_ingestion_retry_500_twice_then_200(db_session):
+    """500 twice then 200 -> row written, retry proven."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    asset = Asset(
+        symbol="RETRY500",
+        name="Retry 500",
+        asset_type="CRYPTO",
+        quote_currency="USDT",
+        is_active=True,
+    )
+    db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-500")
+    db_session.add(pi)
+    db_session.commit()
+
+    now = datetime.now(UTC)
+    payload = {
+        "chart": {
+            "result": [{
+                "meta": {"currency": "USD"},
+                "timestamp": [int(now.timestamp())],
+                "indicators": {
+                    "quote": [{
+                        "open": [50000.0],
+                        "high": [51000.0],
+                        "low": [49000.0],
+                        "close": [50500.0],
+                        "volume": [1000.0],
+                    }]
+                }
+            }],
+            "error": None
+        }
+    }
+    transport = RetryMockTransport({"RETRY-500": [500, 500, payload]})
+
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+
+    res = ingest_quotes(db_session)
+    iq.YahooProvider = orig
+
+    assert res["written"] == 1
+    assert len(transport.requests) == 3
+
+
+def test_quotes_ingestion_retry_429_continuous_fails(db_session):
+    """429 continuously -> failed with real reason, attempt count matches limit, no hang."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    asset = Asset(
+        symbol="RETRY429F",
+        name="Retry 429 Fail",
+        asset_type="CRYPTO",
+        quote_currency="USDT",
+        is_active=True,
+    )
+    db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-429-F")
+    db_session.add(pi)
+    db_session.commit()
+
+    transport = RetryMockTransport({"RETRY-429-F": [429, 429, 429]})
+
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+
+    res = ingest_quotes(db_session)
+    iq.YahooProvider = orig
+
+    assert res["failed"]
+    assert "429" in res["failed"][0]["reason"]
+    assert len(transport.requests) == 3
+
+
+def test_quotes_ingestion_404_no_retry(db_session):
+    """404 -> skipped, NO retry (assert request count == 1)."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    asset = Asset(
+        symbol="RETRY404",
+        name="Retry 404",
+        asset_type="CRYPTO",
+        quote_currency="USDT",
+        is_active=True,
+    )
+    db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-404")
+    db_session.add(pi)
+    db_session.commit()
+
+    transport = RetryMockTransport({})
+
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+
+    res = ingest_quotes(db_session)
+    iq.YahooProvider = orig
+
+    assert res["skipped"] >= 1
+    assert any("not offer" in r["reason"] or "404" in r["reason"] for r in res["skipped_reasons"])
+    assert len(transport.requests) == 1
+
+
+def test_quotes_ingestion_transport_error_failed(db_session):
+    """transport error -> failed with real message."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    asset = Asset(
+        symbol="RETRYTRANS",
+        name="Retry Transport",
+        asset_type="CRYPTO",
+        quote_currency="USDT",
+        is_active=True,
+    )
+    db_session.add(asset)
+    db_session.commit()
+    pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-TRANS")
+    db_session.add(pi)
+    db_session.commit()
+
+    class FailingTransport:
+        def handle_request(self, request):
+            raise httpx.ConnectError("connection reset by peer")
+
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="http://fail", transport=FailingTransport())
+
+    res = ingest_quotes(db_session)
+    iq.YahooProvider = orig
+
+    assert res["failed"]
+    assert "connection reset by peer" in res["failed"][0]["reason"]
+
+
+# FX retry tests
+
+def test_fx_ingestion_retry_429_then_200(db_session):
+    """FX: 429 then 200 -> written."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="FX")
+    db_session.add(provider)
+    db_session.commit()
+
+    now = datetime.now(UTC)
+    payload = {
+        "chart": {
+            "result": [{
+                "meta": {"currency": "USD"},
+                "timestamp": [int(now.timestamp())],
+                "indicators": {
+                    "quote": [{
+                        "open": [15500.0],
+                        "high": [15600.0],
+                        "low": [15400.0],
+                        "close": [15500.0],
+                        "volume": [100.0],
+                    }]
+                }
+            }],
+            "error": None
+        }
+    }
+    transport = RetryMockTransport({"USDIDR=X": [429, payload]})
+
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+
+    res = ingest_fx_rates(db_session, pairs=[("USD", "IDR")])
+    iq.YahooProvider = orig
+
+    assert res["written"] == 1
+    assert len(transport.requests) == 2
+
+
+def test_fx_ingestion_404_no_retry(db_session):
+    """FX: 404 -> skipped, no retry."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="FX")
+    db_session.add(provider)
+    db_session.commit()
+
+    transport = RetryMockTransport({})
+
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+
+    res = ingest_fx_rates(db_session, pairs=[("USD", "IDR")])
+    iq.YahooProvider = orig
+
+    assert res["skipped"] == 1
+    assert len(transport.requests) == 1

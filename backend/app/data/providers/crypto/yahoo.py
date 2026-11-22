@@ -1,12 +1,37 @@
 "Yahoo Finance chart adapter (crypto pairs and stocks, REST public)."
+import time
+import logging
 from datetime import datetime, timedelta, timezone
+from typing import Callable, Any
 
 import httpx
 
 from app.data.providers.schemas import RawKline
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (PIMS market data client)"}
+logger = logging.getLogger(__name__)
 
+def with_retry(
+    func: Callable[..., Any],
+    retries: int = 3,
+    backoff_factor: float = 0.5,
+    retry_codes: list[int] = [429, 500, 502, 503, 504],
+) -> Any:
+    """Execute function with exponential backoff on specified HTTP codes."""
+    for attempt in range(retries):
+        try:
+            return func()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in retry_codes and attempt < retries - 1:
+                sleep_time = backoff_factor * (2**attempt)
+                logger.warning(
+                    f"Retry {attempt + 1}/{retries} for status {e.response.status_code} "
+                    f"after {sleep_time}s"
+                )
+                time.sleep(sleep_time)
+                continue
+            raise e
+    return func()
 
 class YahooProvider:
     provider_code = "YAHOO"
@@ -29,15 +54,19 @@ class YahooProvider:
     ) -> tuple[list[RawKline], str]:
         """Candles plus the currency the provider reported (USD for Yahoo crypto)."""
         interval, bar_seconds = self._timeframe(timeframe)
-        # Request enough history for `limit` candles, then trim.
         range_needed = self._range_for(limit, bar_seconds)
-        response = self._client.get(
-            f"{self.base_url}/v8/finance/chart/{instrument}",
-            params={"interval": interval, "range": range_needed},
-            headers=_HEADERS,
-            timeout=30.0,
-        )
-        response.raise_for_status()
+        
+        def _request():
+            response = self._client.get(
+                f"{self.base_url}/v8/finance/chart/{instrument}",
+                params={"interval": interval, "range": range_needed},
+                headers=_HEADERS,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            return response
+
+        response = with_retry(_request)
         payload = response.json()
         error = payload.get("chart", {}).get("error")
         if error:
@@ -58,7 +87,7 @@ class YahooProvider:
             )
             o, h, l, c = opens[i], highs[i], lows[i], closes[i]
             if None in (o, h, l, c):
-                continue  # gap candle with no quotes
+                continue
             start = datetime.fromtimestamp(start_s, tz=timezone.utc)
             klines.append(
                 RawKline(
