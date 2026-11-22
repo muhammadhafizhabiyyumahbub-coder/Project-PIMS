@@ -47,6 +47,7 @@ def _job_payload(job: ResearchJob) -> dict:
     }
 
 
+@router.post("")
 @router.post("/requests")
 def create_research_request(body: ResearchRequestBody, db: Session = Depends(get_db)):
     """Manual trigger: create request, gate on engine readiness, run bounded job."""
@@ -97,6 +98,7 @@ def get_research_request(request_id: str, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/{report_id}")
 @router.get("/reports/{report_id}")
 def get_research_report(report_id: str, db: Session = Depends(get_db)):
     rid = parse_uuid(report_id)

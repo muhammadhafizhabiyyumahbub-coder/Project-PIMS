@@ -72,6 +72,13 @@ sistem pada tahap Release Candidate V1.
 - **Dampak:** `GET /market-data/quotes` dan `.../instruments/{id}/quote` mengembalikan `data: null` dengan `feed_status: UNAVAILABLE` sampai ingestion dibuat — bukan error, bukan angka karangan. Konversi FX lintas mata uang belum dipakai karena spec §6.4 melarang mengasumsikan inverse rate.
 - **Rencana penanganan:** Implementasikan job ingestion quote (provider Yahoo/Bybit adapter yang sudah ada) + penulisan `fx_rates`, lalu tambahkan test end-to-end yang memverifikasi `freshness_status`.
 
+### 1.8 Correlation Engine belum diimplementasikan
+- **Level:** Medium
+- **Modul:** Analytics (Correlation)
+- **Deskripsi:** Endpoint `GET /api/v1/analytics/correlation` mengembalikan `200` dengan `data: null` dan status `NOT_IMPLEMENTED`.
+- **Dampak:** Analisis korelasi antar portofolio holdings tidak tersedia saat ini.
+- **Rencana penanganan:** Spesifikasi rumus korelasi akan ditentukan dan engine akan diimplementasikan pada fase analitis berikutnya.
+
 ---
 
 ## 2. Ringkasan dampak terhadap pemakaian
