@@ -375,15 +375,15 @@ function ResultsTable({
                     {row.scanner_rank === null ? "—" : `#${row.scanner_rank}`}
                   </td>
                   <td className="px-4 py-2 text-right font-mono tabular-nums">
-                    {row.current_price === null ? "—" : formatPrice(row.current_price)}
-                    {row.quote_currency ? (
-                      <span className="ml-1 text-[10px] text-ink3">
-                        {row.quote_currency}
-                        {row.data_currency && row.data_currency !== row.quote_currency && (
-                          <span className="text-loss" title={`Data dari provider: ${row.data_currency}`}>*</span>
+                    {row.current_price === null ? "—" : (
+                      <>
+                        <span className="text-ink">{formatPrice(row.current_price)}</span>
+                        <span className="text-[10px] text-ink3 ml-1">{row.data_currency ?? "—"}</span>
+                        {row.data_currency && row.quote_currency && row.data_currency !== row.quote_currency && (
+                           <span className="block text-[9px] text-loss">Aset: {row.quote_currency}</span>
                         )}
-                      </span>
-                    ) : null}
+                      </>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-right">
                     <DeltaText value={row.daily_change_pct} />

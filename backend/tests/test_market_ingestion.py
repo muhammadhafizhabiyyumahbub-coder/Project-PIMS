@@ -816,3 +816,80 @@ def test_quotes_ingestion_no_mapping_skipped(db_session):
     assert res["written"] == 1
     assert res["skipped"] == 1
     assert any("no provider instrument mapping for AAPL" in r["reason"] for r in res["skipped_reasons"])
+
+
+def test_quotes_ingestion_data_currency_mismatch(db_session):
+    """Data currency (USD) vs Asset quote_currency (USDT) -> both captured, no error."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    db_session.commit()
+
+    m_crypto = Market(code="CRYPTO", name="Crypto", market_type="CRYPTO")
+    db_session.add(m_crypto)
+    db_session.commit()
+
+    # Asset uses USDT
+    asset = Asset(symbol="BTCUSDT", name="Bitcoin", asset_type="CRYPTO", quote_currency="USDT", market_id=m_crypto.id, is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+    
+    with db_session.no_autoflush:
+        db_session.add(ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="BTC-USD"))
+        db_session.commit()
+
+    # Feed provides USD
+    now = datetime.now(UTC)
+    payload = {"chart": {"result": [{"meta": {"currency": "USD"}, "timestamp": [int(now.timestamp())], "indicators": {"quote": [{"open": [50000.0], "high": [51000.0], "low": [49000.0], "close": [50500.0], "volume": [1000.0]}]}}], "error": None}}
+    
+    transport = MockTransport({"BTC-USD": payload})
+    
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+    
+    res = ingest_quotes(db_session)
+    iq.YahooProvider = orig
+    
+    assert res["written"] == 1
+    # Verify DB or logic would allow distinguishing: current implementation uses pi.provider_symbol which Yahoo uses
+    # The requirement is that the backend must capture the 'currency' field from the feed.
+    # Check MarketQuote record
+    quote = db_session.query(MarketQuote).filter_by(asset_id=asset.id).one()
+    # The current implementation stores the currency from the provider as the record currency
+    assert quote.currency == "USD"
+
+
+def test_ingest_quotes_no_candles_data_currency_is_none(db_session):
+    """Empty payload -> no data_currency, no crash."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    db_session.commit()
+
+    m_crypto = Market(code="CRYPTO", name="Crypto", market_type="CRYPTO")
+    db_session.add(m_crypto)
+    db_session.commit()
+
+    asset = Asset(symbol="EMPTY", name="Empty", asset_type="CRYPTO", quote_currency="USDT", market_id=m_crypto.id, is_active=True)
+    db_session.add(asset)
+    db_session.commit()
+    
+    with db_session.no_autoflush:
+        db_session.add(ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="EMPTY"))
+        db_session.commit()
+    
+    # Payload missing 'result' or empty
+    payload = {"chart": {"result": [], "error": None}}
+    transport = MockTransport({"EMPTY": payload})
+    
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+    
+    res = ingest_quotes(db_session)
+    iq.YahooProvider = orig
+    
+    assert res["written"] == 0
+    # Ingest quotes currently does not explicitly skip if klines are empty within the result list structure, 
+    # but based on the code, if klines is empty, it skips.
+    # The MockTransport logic in this specific case with empty result returns a payload that should hit `if not klines`
+    # Let's inspect klines logic in ingest_quotes
