@@ -2,14 +2,31 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from sqlalchemy.engine import make_url
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
-if "PIMS_DATABASE_URL" not in os.environ:
+_url = os.environ.get("PIMS_DATABASE_URL")
+if not _url:
     raise RuntimeError(
         "PIMS_DATABASE_URL environment variable is not set. "
         "Please create a .env file with your test database URL. "
         "See .env.example for format."
+    )
+
+# The suite TRUNCATEs tables, so it must never point at the development
+# database: force a *_test database (same host/credentials) and refuse to run
+# otherwise. Without this, a plain `pytest` wipes the dev data.
+_parsed = make_url(_url)
+if not (_parsed.database or "").endswith("_test"):
+    _parsed = _parsed.set(database=f"{_parsed.database}_test")
+    os.environ["PIMS_DATABASE_URL"] = _parsed.render_as_string(hide_password=False)
+
+_parsed = make_url(os.environ["PIMS_DATABASE_URL"])
+if not (_parsed.database or "").endswith("_test"):
+    raise RuntimeError(
+        f"Refusing to run tests against non-test database {_parsed.database!r}; "
+        "the suite truncates tables."
     )
 
 import pytest
