@@ -6,7 +6,6 @@ from app.main import app
 
 def extract_spec_endpoints():
     endpoints = []
-    # Locate spec file absolutely
     spec_path = Path(__file__).resolve().parents[2] / "specifications" / "backend" / "api-spec.md"
     
     if not spec_path.exists():
@@ -16,13 +15,7 @@ def extract_spec_endpoints():
     with open(spec_path, "r", encoding="utf-8") as f:
         content = f.read()
     
-    # Updated pattern:
-    # 1. Ignore optional surrounding backticks
-    # 2. Tolerant spaces
-    # 3. Capture HTTP Method
-    # 4. Capture path which might be in backticks or bare
     pattern = re.compile(r"\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*`?(/[^`|\s]+)`?\s*\|")
-    
     for match in pattern.finditer(content):
         method = match.group(1).upper()
         path = match.group(2)
@@ -38,20 +31,20 @@ def get_app_endpoints():
             endpoints.append((method.upper(), path))
     return endpoints
 
+def normalize_path(path: str) -> str:
+    return re.sub(r"\{[^}]+\}", "{}", path)
+
+def normalize(m, p):
+    if p == "/health" or p == "/health/ready":
+        return (m, p)
+    if not p.startswith("/api/v1"):
+        p = f"/api/v1{p}"
+    return (m, normalize_path(p))
+
 def audit():
     spec_raw = extract_spec_endpoints()
     app_raw = get_app_endpoints()
     
-    # Normalization: force path to /api/v1/... if it matches app structure
-    def normalize(m, p):
-        # Spec health is /health, app is /health
-        if p == "/health" or p == "/health/ready":
-            return (m, p)
-        # Add /api/v1 if missing
-        if not p.startswith("/api/v1"):
-            p = f"/api/v1{p}"
-        return (m, p)
-        
     spec_endpoints = {normalize(m, p) for m, p in spec_raw}
     app_endpoints = {normalize(m, p) for m, p in app_raw}
     
@@ -62,7 +55,7 @@ def audit():
     print(f"Endpoints spec terbaca: {len(spec_raw)}")
     if len(spec_raw) < 40:
         print("WARNING: Parser mungkin gagal membaca tabel! Harap periksa regex.")
-    print(f"Endpoints app terbaca: {len(app_endpoints)}")
+    print(f"Endpoints app terbaca: {len(app_raw)}")
     print(f"Gap (a) Spec not in app: {len(in_spec_not_app)}")
     print(f"Gap (b) App not in spec: {len(in_app_not_spec)}")
 
@@ -71,7 +64,7 @@ def audit():
         print(f"{m} {p}")
         
     print("\n--- (b) Endpoint di aplikasi yang TIDAK ada di spec ---")
-    for m, p in in_app_not_spec[:10]: # Print top 10 to save space
+    for m, p in in_app_not_spec[:10]:
         print(f"{m} {p}")
     if len(in_app_not_spec) > 10:
         print("... (truncated)")

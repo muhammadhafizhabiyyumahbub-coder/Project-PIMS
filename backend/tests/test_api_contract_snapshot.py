@@ -1,6 +1,20 @@
 import pytest
+import re
 from fastapi.openapi.utils import get_openapi
 from app.main import app
+
+def normalize_path(path: str) -> str:
+    return re.sub(r"\{[^}]+\}", "{}", path)
+
+def test_normalize_path():
+    assert normalize_path("/api/v1/x/{id}") == "/api/v1/x/{}"
+    assert normalize_path("/api/v1/x/{config_id}") == "/api/v1/x/{}"
+    assert normalize_path("/api/v1/x/{transaction_id}") == "/api/v1/x/{}"
+    assert normalize_path("/api/v1/x/{report_id}") == "/api/v1/x/{}"
+    assert normalize_path("/api/v1/x/{asset_id}") == "/api/v1/x/{}"
+    # Different paths remain different
+    assert normalize_path("/api/v1/x/{id}") != "/api/v1/y/{}"
+    assert normalize_path("/api/v1/x/{id}") != "/api/v1/x/{}/extra"
 
 def test_api_contract_snapshot():
     # Get endpoints from openapi (excludes docs/redoc/internal)
