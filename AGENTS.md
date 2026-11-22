@@ -798,6 +798,7 @@ OpenCode dilarang:
 11. Mengubah rumus finansial tanpa dokumentasi dan pengujian.
 12. Menganggap rekomendasi AI sebagai hasil perhitungan yang terverifikasi.
 13. Mengubah, memindahkan, membuat ulang, atau "membersihkan" file `.env` atau file kredensial lokal; perubahan hanya lewat persetujuan owner. (Pembersihan default kredensial di kode seperti `settings.py`/`conftest.py` tetap diperbolehkan).
+14. Melakukan `DROP`/`TRUNCATE`/`DELETE` massal, `alembic downgrade`, atau `alembic stamp` pada database dev/test (`pims`, `pims_test`). Dilarang membuat/menghapus database. Eksperimen destruktif hanya di database `pims_scratch_*`.
 
 Untuk development, mock data diperbolehkan hanya apabila diberi label yang jelas dan tidak disamarkan sebagai data pasar aktual.
 

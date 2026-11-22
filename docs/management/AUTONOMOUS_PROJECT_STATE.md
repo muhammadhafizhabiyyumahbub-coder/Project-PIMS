@@ -1,6 +1,6 @@
 # PIMS — Autonomous Project State
 
-**Diperbarui:** 2026-11-21 (Hermes sebagai Project Director, OpenCode sebagai implementasi)
+**Diperbarui:** 2026-11-22 (Hermes sebagai Project Director, OpenCode sebagai implementasi)
 **Repo:** `D:/personal-investment-management-system` · branch `master` · remote SSH `git@github.com:muhammadhafizhabiyyumahbub-coder/Project-PIMS.git`
 **Status:** V1 Release Candidate + pengembangan lanjutan (roadmap baru)
 
@@ -10,11 +10,13 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `19ac421` | `git log --oneline -1` |
-| Backend test | **213 passed, 0 failed** | `pytest -q` (PostgreSQL 17 lokal) |
-| Bug P0 terbuka | `POST /scanner/run` → 500 (`NameError: run_scanner`) | `curl -X POST /api/v1/scanner/run` |
+| Commit terakhir | `ed11334` | `git log --oneline -1` |
+| Backend test | **219 passed, 0 failed** (lokal) | `pytest -q` (PostgreSQL 17 lokal) |
+| Bug P0 | ~~`POST /scanner/run` 500~~ **selesai** (`39058ef`, terverifikasi 200) | `curl -X POST /api/v1/scanner/run` |
+| CI GitHub Actions | **aktif** (`.github/workflows/ci.yml`); `frontend` ✅, `backend` ❌ `Run tests` — `FileNotFoundError: site-packages/alembic.ini` (backend terpasang sebagai package, bukan editable) | API `actions/runs` |
+| Backup DB | harian 03:00 → `D:\pims-backups\pims-YYYYmmdd-HHMMSS.sql.gz` (cron `pims-db-backup-daily`), simpan 7 terakhir | `gzip -dc … | grep -c "CREATE TABLE"` |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
-| Migration head | `dcadf6176257` | `alembic current` |
+| Migration head | `d2dcc981c45c` | `alembic current` |
 | Endpoint terpasang | 46 operasi (40 path) dari 54 di `api-spec.md` | openapi vs spec diff |
 | Tabel | 22 | `__tablename__` + pg_tables |
 | Dependency | terkunci di `backend/uv.lock` (PyPI-only) | `uv lock --check` |
@@ -37,7 +39,12 @@
 | Y | Sinkronisasi dokumen tiap tahap + laporan test rilis | P1 | planned | docs | — |
 | Z | Docker dev environment | P3 | **ditunda owner** (butuh reboot fisik + WSL2) | — | — |
 
-## 4. Bug/weakness yang diketahui (jujur)
+## 4. Insiden & pemulihan 2026-11-22 — database dev `pims` hilang
+
+- **Apa yang terjadi:** di tengah ronde "bersih-bersih DB" untuk reproduksi CI, seluruh tabel aplikasi di `pims` hilang (tersisa hanya `alembic_version` di `d2dcc981c45c`). DB `pims_test` (25 tabel) aman; `pims_ci` tidak ada.
+- **Data hilang permanen:** portfolio, transaksi, holdings, snapshot, candle, quote, hasil analytics. Tidak ada backup saat itu (dicek: tidak ada `.dump`/`.sql`) → tidak dapat dipulihkan.
+- **Pemulihan yang dilakukan (terverifikasi):** `alembic stamp base` → `upgrade head` → 25 tabel; seed referensi provider `BYBIT`/`YAHOO`, aset `BTCUSDT`/`ETHUSDT`/`SOLUSDT`, 6 mapping `provider_instruments`; ingestion dijalankan ulang → candle **900** baris, quote **3**, FX **1**, `failed: []`; `GET /market-data/quotes` → 200 (`last 69.02 USD`, `is_realtime: false`).
+- **Pencegahan:** backup harian otomatis 03:00 (cron `pims-db-backup-daily`, `ea2f8e5878fe`) ke `D:\pims-backups\` (dump diverifikasi berisi 25 `CREATE TABLE` + 25 blok `COPY`), retensi 7 file. Aturan keras: dilarang `DROP`/`TRUNCATE`/`DELETE` massal, `alembic downgrade`/`stamp` pada `pims` dan `pims_test`; eksperimen destruktif hanya di DB sekali-pakai `pims_scratch_*`.
 
 - **SELESAI (`141c3b8`): schema drift + FX commit.** `MarketQuote` punya `is_realtime`/`feed_status` yang **tidak ada di `schema-spec` §6.1** dan tidak dibuat migrasi mana pun → INSERT/SELECT ORM gagal di DB nyata (API `/market-data/quotes` sempat **500**). Kolom karangan dihapus dari model/repo/endpoint; `is_realtime` kini konstanta properti feed di response. `ingest_fx_rates` tidak pernah `commit()` → `fx_rates` kosong walau laporan `written: 1`; sudah diperbaiki dan diverifikasi (`fx_rates` = 1, USD/IDR 18158.0). Test anti-drift baru: `backend/tests/test_model_drift.py` (kolom model vs spec) + test persistensi FX lewat koneksi baru.
 - **Baseline sekarang: 208 passed, 0 failed** (suite serial). Verifikasi nyata: `GET /market-data/quotes` 200, `last 58849.37 USD`, `freshness_status LIVE`, `is_realtime false`.

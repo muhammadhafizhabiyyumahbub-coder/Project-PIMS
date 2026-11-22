@@ -1,4 +1,6 @@
 "FastAPI application entrypoint."
+import os
+import logging
 from alembic import command
 from alembic.config import Config
 from pathlib import Path
@@ -11,16 +13,35 @@ from app.api.websocket.market import router as market_ws_router
 from app.config.settings import get_settings
 from app.core.logging import configure_logging
 
+logger = logging.getLogger(__name__)
 
 def run_migrations() -> None:
-    # Use standard resolve to find backend directory relative to this file
-    # This file is at backend/app/main.py
-    backend_dir = Path(__file__).resolve().parent.parent
-    alembic_cfg = Config(str(backend_dir / "alembic.ini"))
-    alembic_cfg.set_main_option("script_location", str(backend_dir / "app" / "database" / "migrations"))
-    alembic_cfg.set_main_option("sqlalchemy.url", get_settings().database_url)
-    command.upgrade(alembic_cfg, "head")
+    # 1. Look for PIMS_ALEMBIC_INI env var
+    # 2. Look in CWD and parent directories
+    # 3. Look in script directory (backend root)
+    alembic_ini_path = os.environ.get("PIMS_ALEMBIC_INI")
+    if not alembic_ini_path:
+        search_dirs = [Path.cwd(), Path(__file__).resolve().parent.parent]
+        for d in search_dirs:
+            candidate = d / "alembic.ini"
+            if candidate.exists():
+                alembic_ini_path = str(candidate)
+                break
+    
+    if not alembic_ini_path or not os.path.exists(alembic_ini_path):
+        logger.warning("alembic.ini not found. Skipping startup migrations.")
+        return
 
+    alembic_cfg = Config(alembic_ini_path)
+    # Ensure script_location is absolute based on the found ini file's directory
+    ini_dir = Path(alembic_ini_path).resolve().parent
+    alembic_cfg.set_main_option("script_location", str(ini_dir / "app" / "database" / "migrations"))
+    alembic_cfg.set_main_option("sqlalchemy.url", get_settings().database_url)
+    try:
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Migrations applied successfully.")
+    except Exception as e:
+        logger.error(f"Migration failed during startup: {e}")
 
 def create_app() -> FastAPI:
     settings = get_settings()
@@ -52,6 +73,5 @@ def create_app() -> FastAPI:
     app.include_router(market_ws_router)
     app.include_router(ws_router)
     return app
-
 
 app = create_app()

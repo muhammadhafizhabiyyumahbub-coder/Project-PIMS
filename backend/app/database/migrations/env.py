@@ -1,4 +1,5 @@
 "Alembic environment. URL comes from PIMS_DATABASE_URL via app settings."
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -9,7 +10,7 @@ from app.core.db import Base
 from app.database import models  # noqa: F401  (registers all tables on metadata)
 
 config = context.config
-if config.config_file_name is not None:
+if config.config_file_name is not None and os.path.exists(config.config_file_name):
     fileConfig(config.config_file_name)
 
 if not config.get_main_option("sqlalchemy.url"):
