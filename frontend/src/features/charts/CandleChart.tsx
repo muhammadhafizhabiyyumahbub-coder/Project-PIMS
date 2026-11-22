@@ -178,7 +178,7 @@ export default function CandleChart({
               Provider feed: REST_PUBLIC · {candlesResponse.candles.length} candles loaded
             </span>
             <span>
-              Data status {candlesResponse.freshness_status} · last candle {candlesResponse.data_timestamp ?? "—"}
+              Data freshness: {candlesResponse.freshness_status} · last candle {candlesResponse.data_timestamp ?? "—"}
             </span>
           </>
         ) : (
