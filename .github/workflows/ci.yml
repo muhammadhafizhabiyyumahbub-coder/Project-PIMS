@@ -42,7 +42,16 @@ jobs:
       - name: Run tests
         run: |
           cd backend
-          pytest tests/ -q
+          set +e
+          pytest tests/ -q --tb=line -rf > /tmp/pytest.out 2>&1
+          rc=$?
+          tail -40 /tmp/pytest.out
+          # Surface failures as GitHub annotations: annotations are readable
+          # through the public checks API, job logs are not.
+          grep -E "^(FAILED|ERROR) " /tmp/pytest.out | head -20 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          exit $rc
 
   frontend:
     runs-on: ubuntu-latest
