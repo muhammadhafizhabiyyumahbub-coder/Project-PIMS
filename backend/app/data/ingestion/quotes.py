@@ -23,6 +23,7 @@ def ingest_quotes(
     asset_ids: list[uuid.UUID] | None = None,
     provider_code: str | None = None,
     feed_timeframe: str = "1h",
+    markets: str | None = None,
 ) -> dict:
     code = provider_code or "YAHOO"
     provider = session.query(DataProvider).filter_by(code=code).first()
@@ -36,23 +37,30 @@ def ingest_quotes(
         .join(ProviderInstrument, Asset.id == ProviderInstrument.asset_id)
         .filter(
             Asset.is_active == True,
-            Asset.asset_type == "CRYPTO",
             ProviderInstrument.provider_id == provider.id,
             ProviderInstrument.is_active == True,
         )
     )
+    if markets:
+        market_list = [m.strip() for m in markets.split(",")]
+        query = query.filter(Asset.market.in_(market_list))
+    
     if asset_ids:
         query = query.filter(Asset.id.in_(asset_ids))
     results = query.all()
 
     # Also identify skipped ones
-    all_active_crypto = session.query(Asset).filter_by(is_active=True, asset_type="CRYPTO").all()
-    requested_ids = {a.id for a in all_active_crypto}
+    asset_query = session.query(Asset).filter_by(is_active=True)
+    if markets:
+        asset_query = asset_query.filter(Asset.market.in_([m.strip() for m in markets.split(",")]))
+    all_active_assets = asset_query.all()
+    
+    requested_ids = {a.id for a in all_active_assets}
     processed_ids = {a.id for a, pi in results}
     
     skipped_count = 0
     skipped_reasons: list = []
-    for asset in all_active_crypto:
+    for asset in all_active_assets:
         if asset.id not in processed_ids:
             skipped_count += 1
             skipped_reasons.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": f"no provider instrument mapping for {asset.symbol}"})
@@ -120,7 +128,7 @@ def ingest_quotes(
 
     session.commit()
     return {
-        "requested": len(all_active_crypto),
+        "requested": len(all_active_assets),
         "written": written,
         "skipped": skipped_count,
         "skipped_reasons": skipped_reasons,

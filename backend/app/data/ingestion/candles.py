@@ -9,7 +9,7 @@ from app.database.models import Asset, ProviderInstrument
 
 logger = logging.getLogger(__name__)
 
-def ingest_candles(timeframe: str = "1h", limit: int = 300) -> dict:
+def ingest_candles(timeframe: str = "1h", limit: int = 300, markets: str | None = None) -> dict:
     session_factory = get_session_factory()
     skipped_reasons = []
     failed = []
@@ -19,11 +19,17 @@ def ingest_candles(timeframe: str = "1h", limit: int = 300) -> dict:
     with session_factory() as session:
         provider, adapter = resolve_provider(session)
         
-        all_active_crypto = session.query(Asset).filter_by(is_active=True, asset_type="CRYPTO").all()
+        query = session.query(Asset).filter(Asset.is_active == True)
+        # Optional markets filter
+        if markets:
+            market_list = [m.strip() for m in markets.split(",")]
+            query = query.filter(Asset.market.in_(market_list))
+        
+        all_active_assets = query.all()
         mapping_query = session.query(ProviderInstrument).filter_by(provider_id=provider.id, is_active=True)
         mappings = {m.asset_id: m for m in mapping_query.all()}
         
-        for asset in all_active_crypto:
+        for asset in all_active_assets:
             if asset.id not in mappings:
                 skipped_count += 1
                 skipped_reasons.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": f"no provider instrument mapping for {asset.symbol}"})
@@ -41,7 +47,7 @@ def ingest_candles(timeframe: str = "1h", limit: int = 300) -> dict:
                 failed.append({"asset_id": str(asset.id), "symbol": asset.symbol, "reason": str(e)})
                 
     return {
-        "requested": len(all_active_crypto),
+        "requested": len(all_active_assets),
         "written": written,
         "skipped": skipped_count,
         "skipped_reasons": skipped_reasons,
@@ -55,5 +61,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeframe", default="1h")
     parser.add_argument("--limit", type=int, default=300)
+    parser.add_argument("--markets", help="Comma-separated market codes (e.g. CRYPTO,US,IDX)")
     args = parser.parse_args()
-    print(json.dumps(ingest_candles(args.timeframe, args.limit)))
+    print(json.dumps(ingest_candles(args.timeframe, args.limit, args.markets)))
