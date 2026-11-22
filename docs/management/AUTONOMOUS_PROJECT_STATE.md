@@ -10,10 +10,10 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `ed11334` | `git log --oneline -1` |
+| Commit terakhir | `5ddccce` | `git log --oneline -1` |
 | Backend test | **219 passed, 0 failed** (lokal) | `pytest -q` (PostgreSQL 17 lokal) |
 | Bug P0 | ~~`POST /scanner/run` 500~~ **selesai** (`39058ef`, terverifikasi 200) | `curl -X POST /api/v1/scanner/run` |
-| CI GitHub Actions | **aktif** (`.github/workflows/ci.yml`); `frontend` ✅, `backend` ❌ `Run tests` — `FileNotFoundError: site-packages/alembic.ini` (backend terpasang sebagai package, bukan editable) | API `actions/runs` |
+| CI GitHub Actions | **HIJAU** — run `5ddccce` `conclusion: success` (backend + frontend). P0 alembic/`site-packages` selesai: `env.py` menjaga `fileConfig`, `main.py` menelusuri konfigurasi lalu skip dengan warning, CI memakai `pip install -e .[dev]` | API `actions/runs` |
 | Backup DB | harian 03:00 → `D:\pims-backups\pims-YYYYmmdd-HHMMSS.sql.gz` (cron `pims-db-backup-daily`), simpan 7 terakhir | `gzip -dc … | grep -c "CREATE TABLE"` |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
 | Migration head | `d2dcc981c45c` | `alembic current` |
