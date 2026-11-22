@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
 from app.data.validation.freshness import freshness_status
-from app.database.models import Asset, DataProvider, ProviderInstrument, ScannerResult, ScannerRun
+from app.database.models import Asset, DataProvider, ProviderInstrument, ScannerResult, ScannerRun, Market
 from app.engines import scanner
 from app.engines.runner import load_candles
 
@@ -29,48 +29,64 @@ def run_scanner(
     session.flush()
 
     provider_code = get_settings().crypto_provider.upper()
-    provider = session.query(DataProvider).filter_by(code=provider_code).first()
-    if not provider:
-        run.execution_status = "FAILED"
-        run.error_message = f"Provider {provider_code} not found in database."
-        run.completed_at = datetime.now(timezone.utc)
-        session.commit()
-        return run
-
-    # 1. Define universe based on mappings
+    
+    # 1. Setup Universe Query
     query = (
-        session.query(Asset, ProviderInstrument)
+        session.query(Asset, ProviderInstrument, DataProvider, Market)
         .join(ProviderInstrument, Asset.id == ProviderInstrument.asset_id)
+        .join(DataProvider, ProviderInstrument.provider_id == DataProvider.id)
+        .outerjoin(Market, Asset.market_id == Market.id)
         .filter(
             Asset.is_active == True,
-            ProviderInstrument.provider_id == provider.id,
             ProviderInstrument.is_active == True,
         )
     )
+
+    # Filter by market category
+    if markets:
+        query = query.filter(Market.code.in_(markets))
+        
     if asset_ids:
         query = query.filter(Asset.id.in_(asset_ids))
 
     results = query.all()
-    all_active = session.query(Asset).filter_by(is_active=True)
+    
+    # Identify candidates
+    all_candidates = session.query(Asset).filter(Asset.is_active == True)
+    if markets:
+        all_candidates = all_candidates.join(Market).filter(Market.code.in_(markets))
     if asset_ids:
-        all_active = all_active.filter(Asset.id.in_(asset_ids))
-    all_active = all_active.all()
+        all_candidates = all_candidates.filter(Asset.id.in_(asset_ids))
+    all_candidates = all_candidates.all()
 
     skipped_reasons = []
     processed_assets = []
     symbol_candles: dict[str, list[dict]] = {}
     data_timestamps: dict[str, datetime] = {}
-
-    # Identify assets without mapping
-    mapped_ids = {a.id for a, pi in results}
-    for asset in all_active:
+    
+    # Mapping for eligibility
+    candidate_map = {a.id: a for a in all_candidates}
+    mapped_ids = {a.id for a, pi, pd, m in results}
+    
+    for asset in all_candidates:
         if asset.id not in mapped_ids:
             skipped_reasons.append(
-                {"symbol": asset.symbol, "reason": f"no active mapping for {provider_code}"}
+                {"symbol": asset.symbol, "reason": f"no provider mapping available"}
             )
-
-    # 2. Check candles for mapped assets
-    for asset, pi in results:
+            continue
+            
+        # Determine provider
+        m = next((m for a, pi, pd, m in results if a.id == asset.id), None)
+        is_crypto = m and m.code == "CRYPTO"
+        chosen_provider_code = provider_code if is_crypto else "YAHOO"
+        
+        pi = next((pi for a, pi, pd, m in results if a.id == asset.id and pd.code == chosen_provider_code), None)
+        if not pi:
+            skipped_reasons.append(
+                {"symbol": asset.symbol, "reason": f"no {chosen_provider_code} mapping found"}
+            )
+            continue
+            
         try:
             candles = load_candles(session, asset.id, timeframe)
             if len(candles) < MIN_CANDLES:
@@ -88,22 +104,19 @@ def run_scanner(
         except Exception as e:
             skipped_reasons.append({"symbol": asset.symbol, "reason": f"error loading data: {str(e)}"})
 
-    # 3. Run instrument engines for eligible assets
+    # 3. Run instrument engines
     from app.engines.runner import run_instrument_engines
 
     for asset in processed_assets:
         try:
             run_instrument_engines(session, asset, timeframe)
         except Exception as e:
-            # Engine failure for one asset shouldn't crash the whole run
             skipped_reasons.append({"symbol": asset.symbol, "reason": f"engine failure: {str(e)}"})
             if asset.symbol in symbol_candles:
                 del symbol_candles[asset.symbol]
 
     # 4. Evaluate universe
-    evaluated = []
-    if symbol_candles:
-        evaluated = scanner.evaluate_universe(symbol_candles)
+    evaluated = scanner.evaluate_universe(symbol_candles)
 
     for item in evaluated:
         asset = next(a for a in processed_assets if a.symbol == item["symbol"])
@@ -124,14 +137,14 @@ def run_scanner(
             )
         )
 
-    run.universe_size = len(all_active)
+    run.universe_size = len(all_candidates)
     run.eligible_count = len(evaluated)
     run.result_count = len(evaluated)
     run.execution_status = "COMPLETED"
     run.completed_at = datetime.now(timezone.utc)
     run.execution_metadata = {
         "timeframe": timeframe,
-        "provider": provider_code,
+        "markets": markets,
         "skipped": skipped_reasons,
     }
     session.commit()
