@@ -60,6 +60,7 @@ def _opportunity(
 ) -> dict:
     candles = load_candles(db, asset.id, timeframe, limit=30)
     last_close = float(candles[-1]["close"]) if candles else None
+    data_currency = candles[-1]["currency"] if candles else None
     change = None
     if len(candles) >= 25:
         prev = float(candles[-25]["close"])
@@ -77,6 +78,7 @@ def _opportunity(
         "current_price": _decimal_str(last_close),
         "daily_change_pct": change,
         "quote_currency": asset.quote_currency,
+        "data_currency": data_currency,
         "scanner_score": _decimal_str(result.score),
         "scanner_rank": result.rank,
         "market_regime": regime.get("detail", {}).get("trend_regime"),

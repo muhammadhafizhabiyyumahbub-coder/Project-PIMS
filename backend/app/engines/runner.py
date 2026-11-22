@@ -36,6 +36,7 @@ def load_candles(session: Session, asset_id, timeframe: str, limit: int = 300) -
             "close": float(r.close_price),
             "volume": float(r.volume) if r.volume is not None else None,
             "quote_volume": float(r.quote_volume) if r.quote_volume is not None else None,
+            "currency": r.currency,
         }
         for r in rows
     ]

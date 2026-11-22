@@ -24,6 +24,7 @@ export interface Opportunity {
   current_price: number | null;
   daily_change_pct: number | null;
   quote_currency: string | null;
+  data_currency: string | null;
   scanner_score: number | null;
   scanner_rank: number | null;
   market_regime: string | null;
