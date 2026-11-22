@@ -200,7 +200,7 @@ def ingest_fx_rates(
                 failed.append({"pair": f"{base}/{quote}", "reason": str(e)})
         except Exception as e:
             logger.exception(f"Unexpected error for {base}/{quote}")
-            failed.append({"pair": f"{base}/{quote}", "reason": "unexpected error"})
+            failed.append({"pair": f"{base}/{quote}", "reason": str(e)})
 
     session.commit()
     return {
