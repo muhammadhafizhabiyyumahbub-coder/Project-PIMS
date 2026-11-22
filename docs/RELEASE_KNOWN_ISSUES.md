@@ -84,3 +84,36 @@ sistem pada tahap Release Candidate V1.
 ## 2. Ringkasan dampak terhadap pemakaian
 
 Sistem berada dalam kondisi **Release Candidate yang jujur dan konsisten**. Seluruh batasan di atas tidak menyebabkan silent data corruption atau kalkulasi palsu. Saat data/fitur belum tersedia, API dan UI secara eksplisit mengembalikan status `UNAVAILABLE`, `PARTIAL`, `STALE`, atau `PROVIDER_NOT_CONFIGURED`.
+
+---
+
+## 3. Status terverifikasi per 2026-11-22 (`0ff3366`)
+
+Angka di bawah diambil dari perintah nyata, bukan perkiraan.
+
+| Item | Nilai | Cara verifikasi |
+|---|---|---|
+| Test lokal | **262 passed, 0 failed** | `pytest tests/ -q` (PostgreSQL 17 lokal, suite memaksa DB `*_test`) |
+| CI GitHub Actions | **hijau** | job `backend` + `frontend` pada commit `0ff3366` |
+| Gate tunggal | `sh scripts/verify_all.sh` → Tests/Linting/Build/Dependencies PASSED | dijalankan lokal |
+| Endpoint | 59 operasi (spec 54) | `backend/scripts/audit_api_contract.py` |
+| Gap spec tersisa | **9** | 7 `watchlists` + `PATCH`/`DELETE /transactions/{id}` |
+| Ingestion | candle+quote+FX, multi-market, jam-an | `python -m app.data.ingestion.candles` → `requested: 5, written: 500` |
+
+### 3.1 Keterbatasan yang masih berlaku
+
+1. **`watchlists` belum ada** (api-spec §17, 7 endpoint). `schema-spec` tidak mendefinisikan tabelnya → butuh keputusan owner sebelum dibuat.
+2. **`PATCH`/`DELETE /transactions/{id}` belum ada** — mengubah/menghapus transaksi menyentuh integritas ledger; keputusan owner.
+3. **`GET /analytics/correlation`** mengembalikan status *not implemented* karena belum ada rumus korelasi di spec. Tidak diisi angka karangan.
+4. **Jalur LLM AI Research** baru diuji dengan provider mock; kunci ada di `.env` tetapi panggilan nyata belum diverifikasi.
+5. **Bybit** hanya teruji lewat HTTP mock (endpoint provider diblokir dari jaringan mesin ini); sumber data produksi saat ini Yahoo Finance.
+6. **Penjadwalan analytics/snapshot** masih manual (keputusan owner: manual-only). Yang otomatis hanya ingestion pasar per jam.
+7. **Kualitas data US/IDX** bergantung pada mapping `provider_instruments` dan feed Yahoo yang delayed (`is_realtime: false`).
+
+### 3.2 Tindakan keamanan yang menunggu owner
+
+- Password PostgreSQL **pernah masuk riwayat git** (`settings.py` sejak commit awal, `conftest.py`, `docker-compose.yml`, `alembic.ini`). Semua sudah dibersihkan dari file yang dilacak **dan** dijaga test `test_no_hardcoded_credentials.py`, tetapi **nilainya masih ada di riwayat repo**. Rotasi password + (opsional) penulisan ulang riwayat adalah keputusan owner.
+
+### 3.3 Insiden data 2026-11-22
+
+Database dev `pims` kehilangan seluruh tabel saat pengerjaan reproduksi CI. Penyebab langsung: `conftest.py` memuat `.env` root sehingga suite menunjuk DB dev lalu `TRUNCATE`. Perbaikan: conftest memaksa DB `*_test` dan menolak jalan bila bukan DB test; ditambah backup harian `D:\pims-backups` (cron `pims-db-backup-daily`, retensi 7). Data lama tidak dapat dipulihkan (tidak ada backup saat itu).

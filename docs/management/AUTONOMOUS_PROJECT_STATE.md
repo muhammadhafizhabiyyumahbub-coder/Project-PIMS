@@ -10,8 +10,8 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `96deb9b` | `git log --oneline -1` |
-| Backend test | **244 passed, 0 failed** (lokal, suite penuh) | `pytest -q` (PostgreSQL 17 lokal) |
+| Commit terakhir | `0ff3366` | `git log --oneline -1` |
+| Backend test | **262 passed, 0 failed** (lokal, suite penuh) | `pytest -q` (PostgreSQL 17 lokal) |
 | Bug P0 | ~~`POST /scanner/run` 500~~ **selesai** (`39058ef`, terverifikasi 200) | `curl -X POST /api/v1/scanner/run` |
 | CI GitHub Actions | **HIJAU** (`96deb9b`)  — run `5ddccce` `conclusion: success` (backend + frontend). P0 alembic/`site-packages` selesai: `env.py` menjaga `fileConfig`, `main.py` menelusuri konfigurasi lalu skip dengan warning, CI memakai `pip install -e .[dev]` | API `actions/runs` |
 | Backup DB | harian 03:00 → `D:\pims-backups\pims-YYYYmmdd-HHMMSS.sql.gz` (cron `pims-db-backup-daily`), simpan 7 terakhir | `gzip -dc … | grep -c "CREATE TABLE"` |
