@@ -1,7 +1,7 @@
 "Seam 3 (continued): scanner scoring/ranking determinism and eligibility."
 from app.engines import scanner
 
-from tests.conftest import synthetic_candles, to_storage
+from conftest import synthetic_candles, to_storage
 
 
 def test_ranking_order_follows_momentum_and_trend():
