@@ -34,10 +34,16 @@ def refresh_asset_candles(session: Session, asset: Asset, timeframe: str, limit:
         .one()
     )
     _, adapter = resolve_provider(session)
-    raw = adapter.fetch_klines(instrument.provider_symbol, timeframe, limit)
+    # Prefer the currency the provider reports for this instrument (BBCA.JK is IDR,
+    # BTC-USD is USD); the adapter-level default was mislabelling IDX candles as USD.
+    if hasattr(adapter, "fetch_klines_with_meta"):
+        raw, provider_currency = adapter.fetch_klines_with_meta(
+            instrument.provider_symbol, timeframe, limit
+        )
+    else:
+        raw, provider_currency = adapter.fetch_klines(instrument.provider_symbol, timeframe, limit), None
     normalized = [normalize_kline(k) for k in raw]
-    # Yahoo candles are USD-denominated; provider carries provenance for this.
-    currency = getattr(adapter, "currency", None) or asset.quote_currency or "USDT"
+    currency = provider_currency or asset.quote_currency or getattr(adapter, "currency", None) or "USD"
     return upsert_candles(
         session,
         asset_id=asset.id,

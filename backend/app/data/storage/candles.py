@@ -41,6 +41,10 @@ def upsert_candles(
                 "quote_volume": stmt.excluded.quote_volume,
                 "close_time": stmt.excluded.close_time,
                 "candle_status": stmt.excluded.candle_status,
+                # Keep provenance correct on re-ingest: an IDX candle mislabelled USD
+                # must be fixable by refreshing, not only by deleting rows.
+                "currency": stmt.excluded.currency,
+                "feed_type": stmt.excluded.feed_type,
                 "received_at": received_at,
             },
         )

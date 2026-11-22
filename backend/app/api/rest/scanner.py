@@ -13,6 +13,7 @@ from app.database.repositories import scanner as repo
 from app.database.models import (
     Asset,
     Market,
+    MarketCandle,
     DataProvider,
     ProviderInstrument,
     ScannerConfiguration,
@@ -133,11 +134,23 @@ def scanner_results(
     results = query.limit(limit).all()
 
     rows = []
+    # One batched lookup per timeframe keeps this honest without an N+1 query.
+    currency_by_timeframe: dict[str, dict] = {}
+    timeframes = {r.timeframe for r in results}
+    for tf in timeframes:
+        currency_by_timeframe[tf] = dict(
+            db.query(MarketCandle.asset_id, MarketCandle.currency)
+            .filter(MarketCandle.timeframe == tf)
+            .distinct(MarketCandle.asset_id)
+            .order_by(MarketCandle.asset_id, MarketCandle.open_time.desc())
+            .all()
+        )
     for r in results:
         asset = db.get(Asset, r.asset_id)
         m = db.get(Market, asset.market_id) if asset and asset.market_id else None
         if market and (not m or m.code.upper() != market.upper()):
             continue
+        data_currency = currency_by_timeframe.get(r.timeframe, {}).get(r.asset_id)
         rows.append({
             "scanner_result_id": str(r.id),
             "scanner_run_id": str(r.scanner_run_id),
@@ -147,6 +160,10 @@ def scanner_results(
             "score": format(Decimal(str(r.score)).normalize(), "f") if r.score is not None else None,
             "matched_rules": r.matched_rules,
             "metric_snapshot": r.metric_snapshot,
+            # Currency of the price that was actually scanned (provider data) and the
+            # asset's nominal quote currency; they differ by design for crypto (USD vs USDT).
+            "data_currency": data_currency,
+            "quote_currency": asset.quote_currency if asset else None,
             "result_status": r.result_status,
             "data_status": r.freshness_status,
             "data_timestamp": r.data_timestamp.isoformat() if r.data_timestamp else None,
