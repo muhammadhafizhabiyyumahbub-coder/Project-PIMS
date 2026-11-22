@@ -1,24 +1,31 @@
-import json
 import re
+import sys
+from pathlib import Path
 from fastapi.openapi.utils import get_openapi
 from app.main import app
 
 def extract_spec_endpoints():
     endpoints = []
-    # Regex to capture | Method | Endpoint | Description |
-    # The spec uses a table with headers: Method, Endpoint, Description
-    # We want to ignore the header/separator lines
-    with open("../specifications/backend/api-spec.md", "r") as f:
+    # Locate spec file absolutely
+    spec_path = Path(__file__).resolve().parents[2] / "specifications" / "backend" / "api-spec.md"
+    
+    if not spec_path.exists():
+        print(f"Error: Spec file not found at {spec_path}")
+        return []
+        
+    with open(spec_path, "r", encoding="utf-8") as f:
         content = f.read()
     
-    # Matches rows like: | GET | /health | Basic health status |
-    pattern = re.compile(r"\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*(\/[^\s|]+)\s*\|")
+    # Updated pattern:
+    # 1. Ignore optional surrounding backticks
+    # 2. Tolerant spaces
+    # 3. Capture HTTP Method
+    # 4. Capture path which might be in backticks or bare
+    pattern = re.compile(r"\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*`?(/[^`|\s]+)`?\s*\|")
+    
     for match in pattern.finditer(content):
         method = match.group(1).upper()
         path = match.group(2)
-        # Clean path: the spec uses /api/v1 prefix conceptually, but endpoints are listed as /health
-        # The app.openapi() routes are usually /api/v1/health or similar.
-        # Let's collect them and compare.
         endpoints.append((method, path))
     return endpoints
 
@@ -32,52 +39,42 @@ def get_app_endpoints():
     return endpoints
 
 def audit():
-    spec_endpoints = extract_spec_endpoints()
-    app_endpoints = get_app_endpoints()
+    spec_raw = extract_spec_endpoints()
+    app_raw = get_app_endpoints()
     
-    # Normalize paths: some specs might not have /api/v1 prefix explicitly for all, 
-    # but the app has it. Let's compare carefully.
-    # The spec says: GET | /portfolios |...
-    # The app might have: /api/v1/portfolios
-    
-    normalized_spec = set()
-    for m, p in spec_endpoints:
+    # Normalization: force path to /api/v1/... if it matches app structure
+    def normalize(m, p):
+        # Spec health is /health, app is /health
+        if p == "/health" or p == "/health/ready":
+            return (m, p)
+        # Add /api/v1 if missing
         if not p.startswith("/api/v1"):
-            p = f"/api/v1{p}" if p != "/health" else p # health is special in spec
-        normalized_spec.add((m, p))
+            p = f"/api/v1{p}"
+        return (m, p)
         
-    normalized_app = set()
-    for m, p in app_endpoints:
-        normalized_app.add((m, p))
-        
-    in_spec_not_app = normalized_spec - normalized_app
-    in_app_not_spec = normalized_app - normalized_spec
+    spec_endpoints = {normalize(m, p) for m, p in spec_raw}
+    app_endpoints = {normalize(m, p) for m, p in app_raw}
     
-    # Check method mismatches on paths
-    spec_paths = {p for m, p in normalized_spec}
-    app_paths = {p for m, p in normalized_app}
+    in_spec_not_app = sorted(list(spec_endpoints - app_endpoints))
+    in_app_not_spec = sorted(list(app_endpoints - spec_endpoints))
     
-    common_paths = spec_paths.intersection(app_paths)
-    method_mismatch = []
-    for p in common_paths:
-        methods_spec = {m for m, path in normalized_spec if path == p}
-        methods_app = {m for m, path in normalized_app if path == p}
-        if methods_spec != methods_app:
-            method_mismatch.append((p, methods_spec, methods_app))
-            
-    print("--- (a) Endpoint di spec yang BELUM ada di aplikasi ---")
-    for m, p in sorted(in_spec_not_app):
+    print(f"--- Audit Report ---")
+    print(f"Endpoints spec terbaca: {len(spec_raw)}")
+    if len(spec_raw) < 40:
+        print("WARNING: Parser mungkin gagal membaca tabel! Harap periksa regex.")
+    print(f"Endpoints app terbaca: {len(app_endpoints)}")
+    print(f"Gap (a) Spec not in app: {len(in_spec_not_app)}")
+    print(f"Gap (b) App not in spec: {len(in_app_not_spec)}")
+
+    print("\n--- (a) Endpoint di spec yang BELUM ada di aplikasi ---")
+    for m, p in in_spec_not_app:
         print(f"{m} {p}")
         
     print("\n--- (b) Endpoint di aplikasi yang TIDAK ada di spec ---")
-    for m, p in sorted(in_app_not_spec):
+    for m, p in in_app_not_spec[:10]: # Print top 10 to save space
         print(f"{m} {p}")
-        
-    print("\n--- (c) Path sama tapi method berbeda ---")
-    for p, spec, app in sorted(method_mismatch):
-        print(f"Path: {p}, Spec Methods: {spec}, App Methods: {app}")
-
-    print(f"\nRingkasan: Spec not in app: {len(in_spec_not_app)}, App not in spec: {len(in_app_not_spec)}, Mismatches: {len(method_mismatch)}")
+    if len(in_app_not_spec) > 10:
+        print("... (truncated)")
 
 if __name__ == "__main__":
     audit()
