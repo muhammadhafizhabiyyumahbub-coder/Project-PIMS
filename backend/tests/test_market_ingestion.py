@@ -5,7 +5,7 @@ from datetime import datetime, UTC, timedelta
 from decimal import Decimal
 
 import httpx
-from app.database.models import Asset, DataProvider, MarketQuote, FXRate, ProviderInstrument
+from app.database.models import Asset, DataProvider, MarketQuote, FXRate, ProviderInstrument, Market
 from app.data.ingestion.quotes import ingest_quotes, ingest_fx_rates
 
 class MockTransport:
@@ -677,3 +677,142 @@ def test_fx_ingestion_404_no_retry(db_session):
 
     assert res["skipped"] == 1
     assert len(transport.requests) == 1
+
+
+# === Multi-market ingestion tests ===
+
+def test_quotes_ingestion_mixed_universe(db_session):
+    """Mixed CRYPTO + US + IDX universe -> all three ingested using provider symbols."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    db_session.commit()
+    
+    m_crypto = Market(code="CRYPTO", name="Crypto", market_type="CRYPTO")
+    m_us = Market(code="US", name="US Stocks", market_type="STOCK")
+    m_idx = Market(code="IDX", name="IDX Stocks", market_type="STOCK")
+    db_session.add_all([m_crypto, m_us, m_idx])
+    db_session.commit()
+    
+    btc = Asset(symbol="BTCUSDT", name="Bitcoin", asset_type="CRYPTO", quote_currency="USDT", market_id=m_crypto.id, is_active=True)
+    aapl = Asset(symbol="AAPL", name="Apple Inc.", asset_type="STOCK", quote_currency="USD", market_id=m_us.id, is_active=True)
+    bbca = Asset(symbol="BBCA", name="Bank Central Asia", asset_type="STOCK", quote_currency="IDR", market_id=m_idx.id, is_active=True)
+    
+    for asset in [btc, aapl, bbca]:
+        db_session.add(asset)
+    db_session.commit()
+    
+    with db_session.no_autoflush:
+        db_session.add(ProviderInstrument(asset_id=btc.id, provider_id=provider.id, provider_symbol="BTC-USD"))
+        db_session.add(ProviderInstrument(asset_id=aapl.id, provider_id=provider.id, provider_symbol="AAPL"))
+        db_session.add(ProviderInstrument(asset_id=bbca.id, provider_id=provider.id, provider_symbol="BBCA.JK"))
+        db_session.commit()
+    
+    now = datetime.now(UTC)
+    payload_btc = {"chart": {"result": [{"meta": {"currency": "USD"}, "timestamp": [int(now.timestamp())], "indicators": {"quote": [{"open": [50000.0], "high": [51000.0], "low": [49000.0], "close": [50500.0], "volume": [1000.0]}]}}], "error": None}}
+    payload_aapl = {"chart": {"result": [{"meta": {"currency": "USD"}, "timestamp": [int(now.timestamp())], "indicators": {"quote": [{"open": [150.0], "high": [155.0], "low": [148.0], "close": [153.0], "volume": [1000000.0]}]}}], "error": None}}
+    payload_bbca = {"chart": {"result": [{"meta": {"currency": "USD"}, "timestamp": [int(now.timestamp())], "indicators": {"quote": [{"open": [9000.0], "high": [9100.0], "low": [8900.0], "close": [9050.0], "volume": [500000.0]}]}}], "error": None}}
+    
+    transport = MockTransport({
+        "BTC-USD": payload_btc,
+        "AAPL": payload_aapl,
+        "BBCA.JK": payload_bbca,
+    })
+    
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+    
+    res = ingest_quotes(db_session)
+    iq.YahooProvider = orig
+    
+    assert res["requested"] == 3
+    assert res["written"] == 3
+    assert res["skipped"] == 0
+    assert len(transport.requests) == 3
+    requested_symbols = {str(r.url).split("/chart/")[1].split("?")[0] for r in transport.requests}
+    assert requested_symbols == {"BTC-USD", "AAPL", "BBCA.JK"}
+
+
+def test_quotes_ingestion_markets_filter_idx_only(db_session):
+    """markets=['IDX'] -> only IDX assets ingested."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    db_session.commit()
+    
+    m_crypto = Market(code="CRYPTO", name="Crypto", market_type="CRYPTO")
+    m_us = Market(code="US", name="US Stocks", market_type="STOCK")
+    m_idx = Market(code="IDX", name="IDX Stocks", market_type="STOCK")
+    db_session.add_all([m_crypto, m_us, m_idx])
+    db_session.commit()
+    
+    btc = Asset(symbol="BTCUSDT", name="Bitcoin", asset_type="CRYPTO", quote_currency="USDT", market_id=m_crypto.id, is_active=True)
+    aapl = Asset(symbol="AAPL", name="Apple Inc.", asset_type="STOCK", quote_currency="USD", market_id=m_us.id, is_active=True)
+    bbca = Asset(symbol="BBCA", name="Bank Central Asia", asset_type="STOCK", quote_currency="IDR", market_id=m_idx.id, is_active=True)
+    
+    for asset in [btc, aapl, bbca]:
+        db_session.add(asset)
+    db_session.commit()
+    
+    with db_session.no_autoflush:
+        db_session.add(ProviderInstrument(asset_id=btc.id, provider_id=provider.id, provider_symbol="BTC-USD"))
+        db_session.add(ProviderInstrument(asset_id=aapl.id, provider_id=provider.id, provider_symbol="AAPL"))
+        db_session.add(ProviderInstrument(asset_id=bbca.id, provider_id=provider.id, provider_symbol="BBCA.JK"))
+        db_session.commit()
+    
+    now = datetime.now(UTC)
+    payload_bbca = {"chart": {"result": [{"meta": {"currency": "USD"}, "timestamp": [int(now.timestamp())], "indicators": {"quote": [{"open": [9000.0], "high": [9100.0], "low": [8900.0], "close": [9050.0], "volume": [500000.0]}]}}], "error": None}}
+    
+    transport = MockTransport({"BBCA.JK": payload_bbca})
+    
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+    
+    res = ingest_quotes(db_session, markets="IDX")
+    iq.YahooProvider = orig
+    
+    assert res["requested"] == 1  # only BBCA
+    assert res["written"] == 1
+    assert len(transport.requests) == 1
+    assert "BBCA.JK" in str(transport.requests[0].url)
+
+
+def test_quotes_ingestion_no_mapping_skipped(db_session):
+    """Asset without provider mapping -> skipped with reason."""
+    provider = DataProvider(code="YAHOO", name="Yahoo Finance", provider_type="CRYPTO")
+    db_session.add(provider)
+    db_session.commit()
+    
+    m_crypto = Market(code="CRYPTO", name="Crypto", market_type="CRYPTO")
+    m_us = Market(code="US", name="US Stocks", market_type="STOCK")
+    db_session.add_all([m_crypto, m_us])
+    db_session.commit()
+    
+    btc = Asset(symbol="BTCUSDT", name="Bitcoin", asset_type="CRYPTO", quote_currency="USDT", market_id=m_crypto.id, is_active=True)
+    aapl = Asset(symbol="AAPL", name="Apple Inc.", asset_type="STOCK", quote_currency="USD", market_id=m_us.id, is_active=True)
+    
+    db_session.add(btc)
+    db_session.add(aapl)
+    db_session.commit()
+    
+    # Only BTC has mapping
+    with db_session.no_autoflush:
+        db_session.add(ProviderInstrument(asset_id=btc.id, provider_id=provider.id, provider_symbol="BTC-USD"))
+        db_session.commit()
+    
+    now = datetime.now(UTC)
+    payload_btc = {"chart": {"result": [{"meta": {"currency": "USD"}, "timestamp": [int(now.timestamp())], "indicators": {"quote": [{"open": [50000.0], "high": [51000.0], "low": [49000.0], "close": [50500.0], "volume": [1000.0]}]}}], "error": None}}
+    
+    transport = MockTransport({"BTC-USD": payload_btc})
+    
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="https://query1.finance.yahoo.com", transport=transport)
+    
+    res = ingest_quotes(db_session)
+    iq.YahooProvider = orig
+    
+    assert res["requested"] == 2
+    assert res["written"] == 1
+    assert res["skipped"] == 1
+    assert any("no provider instrument mapping for AAPL" in r["reason"] for r in res["skipped_reasons"])

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from httpx import HTTPStatusError
 from app.core.db import get_session_factory
 from app.data.ingestion.ingest import refresh_asset_candles, resolve_provider
-from app.database.models import Asset, ProviderInstrument
+from app.database.models import Asset, ProviderInstrument, Market
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def ingest_candles(timeframe: str = "1h", limit: int = 300, markets: str | None 
         # Optional markets filter
         if markets:
             market_list = [m.strip() for m in markets.split(",")]
-            query = query.filter(Asset.market.in_(market_list))
+            query = query.join(Market, Asset.market_id == Market.id).filter(Market.code.in_(market_list))
         
         all_active_assets = query.all()
         mapping_query = session.query(ProviderInstrument).filter_by(provider_id=provider.id, is_active=True)

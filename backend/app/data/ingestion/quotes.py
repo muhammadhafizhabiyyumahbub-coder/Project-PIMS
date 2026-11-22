@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from httpx import HTTPStatusError
 
 from app.core.db import get_session_factory
-from app.database.models import Asset, DataProvider, ProviderInstrument
+from app.database.models import Asset, DataProvider, ProviderInstrument, Market
 from app.database.repositories.market import upsert_quote, upsert_fx_rate
 from app.data.providers.crypto.yahoo import YahooProvider
 from app.data.validation.freshness import freshness_status
@@ -43,7 +43,7 @@ def ingest_quotes(
     )
     if markets:
         market_list = [m.strip() for m in markets.split(",")]
-        query = query.filter(Asset.market.in_(market_list))
+        query = query.join(Market, Asset.market_id == Market.id).filter(Market.code.in_(market_list))
     
     if asset_ids:
         query = query.filter(Asset.id.in_(asset_ids))
@@ -52,7 +52,7 @@ def ingest_quotes(
     # Also identify skipped ones
     asset_query = session.query(Asset).filter_by(is_active=True)
     if markets:
-        asset_query = asset_query.filter(Asset.market.in_([m.strip() for m in markets.split(",")]))
+        asset_query = asset_query.join(Market, Asset.market_id == Market.id).filter(Market.code.in_([m.strip() for m in markets.split(",")]))
     all_active_assets = asset_query.all()
     
     requested_ids = {a.id for a in all_active_assets}
