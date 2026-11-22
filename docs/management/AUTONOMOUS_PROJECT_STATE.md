@@ -10,14 +10,14 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `5ddccce` | `git log --oneline -1` |
-| Backend test | **219 passed, 0 failed** (lokal) | `pytest -q` (PostgreSQL 17 lokal) |
+| Commit terakhir | `96deb9b` | `git log --oneline -1` |
+| Backend test | **244 passed, 0 failed** (lokal, suite penuh) | `pytest -q` (PostgreSQL 17 lokal) |
 | Bug P0 | ~~`POST /scanner/run` 500~~ **selesai** (`39058ef`, terverifikasi 200) | `curl -X POST /api/v1/scanner/run` |
-| CI GitHub Actions | **HIJAU** — run `5ddccce` `conclusion: success` (backend + frontend). P0 alembic/`site-packages` selesai: `env.py` menjaga `fileConfig`, `main.py` menelusuri konfigurasi lalu skip dengan warning, CI memakai `pip install -e .[dev]` | API `actions/runs` |
+| CI GitHub Actions | **HIJAU** (`96deb9b`)  — run `5ddccce` `conclusion: success` (backend + frontend). P0 alembic/`site-packages` selesai: `env.py` menjaga `fileConfig`, `main.py` menelusuri konfigurasi lalu skip dengan warning, CI memakai `pip install -e .[dev]` | API `actions/runs` |
 | Backup DB | harian 03:00 → `D:\pims-backups\pims-YYYYmmdd-HHMMSS.sql.gz` (cron `pims-db-backup-daily`), simpan 7 terakhir | `gzip -dc … | grep -c "CREATE TABLE"` |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
 | Migration head | `d2dcc981c45c` | `alembic current` |
-| Endpoint terpasang | 46 operasi (40 path) dari 54 di `api-spec.md` | openapi vs spec diff |
+| Endpoint terpasang | **59 operasi**; gap spec tersisa **9** (7 `watchlists` + `PATCH`/`DELETE` transaksi — keputusan owner) | openapi vs spec diff |
 | Tabel | 22 | `__tablename__` + pg_tables |
 | Dependency | terkunci di `backend/uv.lock` (PyPI-only) | `uv lock --check` |
 
@@ -82,3 +82,11 @@ WAC cost basis · TWR utama + RFR 0 + CAGR ≥365 hari · risk `current_weights_
 - Dilarang melemahkan/menghapus test; angka test harus ditempel nyata.
 - Gagal-jujur: `null`/`UNAVAILABLE` + alasan, tidak pernah 0 atau angka karangan.
 - Push hanya lewat SSH; commit + push tiap tahap selesai.
+
+## 5. Gap kontrak API (audit `backend/scripts/audit_api_contract.py`)
+
+- Alat: `cd backend && ./.venv/Scripts/python.exe scripts/audit_api_contract.py` (normalisasi `{param}` → `{}`, jalan dari `backend/` maupun root).
+- Kondisi `96deb9b`: spec 54 · app 59 · gap (a) **9** · gap (b) 14.
+- 9 gap tersisa: 7 endpoint `watchlists` (api-spec §17, `schema-spec` tanpa tabel → keputusan owner) + `PATCH`/`DELETE /transactions/{id}` (menyentuh integritas ledger → keputusan owner).
+- Ditutup aditif: 6 `GET /analytics/*` + `POST/GET /research`, `GET /research/{id}`; `correlation` = `NOT_IMPLEMENTED` jujur (belum ada rumus di spec), tercatat di `RELEASE_KNOWN_ISSUES.md`.
+- CI: kegagalan didiagnosis lewat annotation (`::error::` → `/commits/<sha>/check-runs` → `/check-runs/<id>/annotations`), bukan log (butuh token).
