@@ -10,10 +10,10 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `0ff3366` | `git log --oneline -1` |
-| Backend test | **262 passed, 0 failed** (lokal, suite penuh) | `pytest -q` (PostgreSQL 17 lokal) |
+| Commit terakhir | `3ea9508` | `git log --oneline -1` |
+| Backend test | **264 passed, 0 failed** (LOKAL, suite penuh; CI menjalankan suite yang sama di DB bersih) | `pytest -q` (PostgreSQL 17 lokal) |
 | Bug P0 | ~~`POST /scanner/run` 500~~ **selesai** (`39058ef`, terverifikasi 200) | `curl -X POST /api/v1/scanner/run` |
-| CI GitHub Actions | **HIJAU** (`96deb9b`)  — run `5ddccce` `conclusion: success` (backend + frontend). P0 alembic/`site-packages` selesai: `env.py` menjaga `fileConfig`, `main.py` menelusuri konfigurasi lalu skip dengan warning, CI memakai `pip install -e .[dev]` | API `actions/runs` |
+| CI GitHub Actions | **HIJAU** — run `3ea9508` `conclusion: success` (job `backend` + `frontend`). Kegagalan didiagnosis lewat annotation (`::error::` → `/check-runs/<id>/annotations`) karena log butuh token | API `actions/runs` |
 | Backup DB | harian 03:00 → `D:\pims-backups\pims-YYYYmmdd-HHMMSS.sql.gz` (cron `pims-db-backup-daily`), simpan 7 terakhir | `gzip -dc … | grep -c "CREATE TABLE"` |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
 | Migration head | `d2dcc981c45c` | `alembic current` |
@@ -61,7 +61,7 @@
 - Engine `correlation`, `factor`, `sentiment`, `macro`, `backtesting`, `attribution`, `scenario` masih kosong (belum ada rumus di spec).
 - `ruff B008` (pola `Depends()` FastAPI) belum dikonfigurasi eksplisit.
 - `market_quotes` freshness → `/markets/status` masih diturunkan dari candle.
-- Tidak ada CI; verifikasi masih manual (`scripts/verify_all.sh` belum dibuat).
+- ~~Tidak ada CI; verifikasi manual~~ **USANG (histori):** sekarang ada CI di `.github/workflows/ci.yml` (hijau) dan `scripts/verify_all.sh` portabel (Tests/Linting/Build/Dependencies PASSED).
 - Bybit live belum teruji (blokir ISP); LLM research baru jalur mock.
 
 ## 5. Keputusan teknis yang sudah diambil (lihat `technical-decisions.md` §7.6–§7.13)
