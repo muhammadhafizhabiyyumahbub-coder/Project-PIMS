@@ -88,7 +88,7 @@ def run_scanner(
             continue
             
         try:
-            candles = load_candles(session, asset.id, timeframe)
+            candles = load_candles(session, asset.id, timeframe, provider_id=pi.provider_id)
             if len(candles) < MIN_CANDLES:
                 skipped_reasons.append(
                     {

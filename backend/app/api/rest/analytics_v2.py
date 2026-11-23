@@ -264,7 +264,9 @@ def get_analytics_technical(
         return error_response("NOT_FOUND", f"asset {asset_id} not found", 404)
 
     try:
-        candles = load_candles(db, aid, timeframe, limit=limit)
+        from app.engines.runner import resolve_provider_id
+        provider_id = resolve_provider_id(db, asset)
+        candles = load_candles(db, aid, timeframe, limit=limit, provider_id=provider_id)
         if not candles:
             return error_response("NOT_FOUND", f"no candles for asset {asset_id} timeframe {timeframe}", 404)
     except Exception as exc:
@@ -321,7 +323,9 @@ def get_analytics_market_regime(
         return error_response("NOT_FOUND", f"asset {asset_id} not found", 404)
 
     try:
-        candles = load_candles(db, aid, timeframe, limit=limit)
+        from app.engines.runner import resolve_provider_id
+        provider_id = resolve_provider_id(db, asset)
+        candles = load_candles(db, aid, timeframe, limit=limit, provider_id=provider_id)
         if not candles:
             return error_response("NOT_FOUND", f"no candles for asset {asset_id} timeframe {timeframe}", 404)
     except Exception as exc:

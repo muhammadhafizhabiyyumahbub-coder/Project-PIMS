@@ -1,26 +1,110 @@
 "Engine runner: loads candles, runs engines, persists analytics_runs + results."
+import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.config.settings import get_settings
 from app.database.models import (
     AnalyticsRun,
     Asset,
+    DataProvider,
+    Market,
     MarketCandle,
     MarketRegimeResult,
+    ProviderInstrument,
     RiskResult,
     TechnicalResult,
 )
 from app.engines import market_regime, risk, technical
 
+logger = logging.getLogger(__name__)
+
 CALCULATION_VERSION = "1.0.0"
 
 
-def load_candles(session: Session, asset_id, timeframe: str, limit: int = 300) -> list[dict]:
-    rows = (
+def resolve_provider_id(session: Session, asset: Asset) -> Optional[uuid.UUID]:
+    """Resolve the canonical provider_id for an asset based on its market and settings."""
+    settings = get_settings()
+    crypto_provider_code = settings.crypto_provider.upper()
+    
+    if not asset.market_id:
+        return None
+    
+    market = session.get(Market, asset.market_id)
+    if not market:
+        return None
+    
+    # Determine target provider code based on market type
+    if market.market_type == "CRYPTO" or market.code == "CRYPTO":
+        target_provider_code = crypto_provider_code
+    else:
+        target_provider_code = "YAHOO"
+    
+    # Find the active provider instrument for this asset and provider
+    provider = (
+        session.query(DataProvider)
+        .filter_by(code=target_provider_code)
+        .first()
+    )
+    if not provider:
+        return None
+    
+    pi = (
+        session.query(ProviderInstrument)
+        .filter_by(asset_id=asset.id, provider_id=provider.id, is_active=True)
+        .first()
+    )
+    return pi.provider_id if pi else None
+
+
+def load_candles(
+    session: Session, 
+    asset_id, 
+    timeframe: str, 
+    limit: int = 300,
+    provider_id: Optional[uuid.UUID] = None
+) -> list[dict]:
+    """Load candles for an asset, optionally filtered by provider.
+    
+    If provider_id is not provided, it will be resolved from the asset's market.
+    """
+    # If no explicit provider_id, resolve from asset
+    if provider_id is None:
+        asset = session.get(Asset, asset_id)
+        if asset:
+            provider_id = resolve_provider_id(session, asset)
+        if provider_id is None:
+            # Never mix providers silently: fall back to the provider that wrote the
+            # most recent candle for this asset/timeframe, and log which one was used.
+            latest = (
+                session.query(MarketCandle)
+                .filter_by(asset_id=asset_id, timeframe=timeframe)
+                .order_by(MarketCandle.open_time.desc())
+                .first()
+            )
+            if latest is not None:
+                provider_id = latest.provider_id
+                logger.info(
+                    "load_candles: no configured provider mapping for asset %s (%s); "
+                    "using the provider of the latest candle (%s)",
+                    asset_id,
+                    timeframe,
+                    provider_id,
+                )
+    
+    query = (
         session.query(MarketCandle)
         .filter_by(asset_id=asset_id, timeframe=timeframe)
+    )
+    
+    if provider_id:
+        query = query.filter_by(provider_id=provider_id)
+    
+    rows = (
+        query
         .order_by(MarketCandle.open_time.desc())
         .limit(limit)
         .all()
@@ -67,7 +151,8 @@ def _new_run(
 
 def run_instrument_engines(session: Session, asset: Asset, timeframe: str) -> dict:
     """Run technical + market_regime + risk engines for one asset. Persist results."""
-    candles = load_candles(session, asset.id, timeframe)
+    provider_id = resolve_provider_id(session, asset)
+    candles = load_candles(session, asset.id, timeframe, provider_id=provider_id)
     now = datetime.now(timezone.utc)
     observation_time = candles[-1]["close_time"] if candles else now
     output: dict = {"technical": None, "market_regime": None, "risk": None}

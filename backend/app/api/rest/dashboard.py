@@ -58,7 +58,9 @@ def _decimal_str(value: Decimal | float | None) -> str | None:
 def _opportunity(
     db: Session, result: ScannerResult, asset: Asset, market: Market | None, timeframe: str
 ) -> dict:
-    candles = load_candles(db, asset.id, timeframe, limit=30)
+    from app.engines.runner import resolve_provider_id
+    provider_id = resolve_provider_id(db, asset)
+    candles = load_candles(db, asset.id, timeframe, limit=30, provider_id=provider_id)
     last_close = float(candles[-1]["close"]) if candles else None
     data_currency = candles[-1]["currency"] if candles else None
     change = None
@@ -271,7 +273,9 @@ def dashboard_market_overview(db: Session = Depends(get_db)):
         )
         movers = []
         for asset in assets:
-            candles = load_candles(db, asset.id, "1h", limit=30)
+            from app.engines.runner import resolve_provider_id
+            provider_id = resolve_provider_id(db, asset)
+            candles = load_candles(db, asset.id, "1h", limit=30, provider_id=provider_id)
             if len(candles) < 25:
                 continue
             last = float(candles[-1]["close"])

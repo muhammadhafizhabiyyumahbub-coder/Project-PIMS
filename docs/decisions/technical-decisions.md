@@ -1004,3 +1004,26 @@ Keputusan untuk `run_scanner` (`app/engines/scanner/service.py`), merujuk
   dilaporkan, cakupan market/provider disimpan di `execution_metadata`.
 - **Batasan jujur:** kualitas hasil bergantung pada kualitas mapping simbol; belum ada
   verifikasi kualitas data IDX/US terhadap provider bayar.
+
+---
+
+## 7.16 Explicit Provider Isolation in Analytical Engine (2026-11-23)
+
+**Status:** APPROVED (2026-11-23). Draf awal oleh OpenCode; §7.15 yang terhapus dipulihkan dan bagian fallback dikoreksi agar sama dengan kode.
+
+**Decision:**
+`load_candles` now enforces explicit provider filtering, preventing data mixing in time series (e.g., Yahoo vs. Bybit).
+
+**Implementation:**
+1. `load_candles` accepts `provider_id`. If omitted, it resolves via `resolve_provider_id` based on asset market:
+   - CRYPTO market -> `settings.crypto_provider` (default YAHOO).
+   - Others -> `YAHOO`.
+2. Fallback behaviour (as implemented): if no mapping resolves, `load_candles` pins the provider that wrote the **most recent** candle for that asset+timeframe and logs the choice — the series never interleaves two providers
+3. Callers (`valuation`, `risk`, `scanner`, `dashboard`) explicitly use `resolve_provider_id` for consistency.
+
+**Consequences:**
+- Data series for a given asset+timeframe are now guaranteed to be provider-homogeneous.
+- This ensures integrity for technical indicators (SMA, RSI, ATR) which are sensitive to source mismatch.
+- A slight increase in latency for initial candle resolution (one DB lookup per asset) is acceptable given current universe size.
+- A regression test case `test_provider_separation` was added to verify that only the primary provider is loaded for a given asset mapping.
+

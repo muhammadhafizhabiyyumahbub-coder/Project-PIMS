@@ -8,7 +8,9 @@ from app.qualification.service import evaluate_engine_readiness
 
 def build_context(session: Session, asset: Asset, timeframe: str) -> dict:
     """All values come from persisted engine outputs; nothing is synthesized."""
-    candles = load_candles(session, asset.id, timeframe, limit=200)
+    from app.engines.runner import resolve_provider_id
+    provider_id = resolve_provider_id(session, asset)
+    candles = load_candles(session, asset.id, timeframe, limit=200, provider_id=provider_id)
     last_close = float(candles[-1]["close"]) if candles else None
     close_24h_ago = float(candles[-25]["close"]) if len(candles) >= 25 else None
     daily_change = (
