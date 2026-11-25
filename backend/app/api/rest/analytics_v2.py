@@ -25,6 +25,7 @@ from app.engines.backtesting.engine import (
 )
 from app.engines.factor.engine import run_factor_for_universe, FactorConfig
 from app.engines.fundamental.engine import run_fundamental_for_universe
+from app.engines.sentiment.engine import run_sentiment_for_universe
 from app.engines.scenario.engine import run_scenario_for_portfolio
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -572,6 +573,43 @@ def run_analytics_fundamental(
         return error_response("SERVER_ERROR", str(exc), 500)
 
     return success_response({"run_id": result["run_id"], "status": "COMPLETED"})
+
+
+class SentimentRequest(BaseModel):
+    symbols: list[str] = Field(..., min_length=1, description="Asset symbols")
+    timeframe: str = Field("1d", description="Timeframe")
+
+
+@router.post("/sentiment")
+def run_analytics_sentiment(
+    payload: SentimentRequest,
+    db: Session = Depends(get_db),
+):
+    """Asset-level sentiment analysis (Phase 1).
+
+    Persists to analytics_runs (SENTIMENT) + sentiment_results.
+    Deterministic; uses LLM via app/ai for headline scoring.
+    """
+    from app.database.models import Asset
+    assets = []
+    for symbol in payload.symbols:
+        a = db.query(Asset).filter_by(symbol=symbol, is_active=True).first()
+        if a is None:
+            return error_response("VALIDATION_ERROR", f"asset {symbol!r} not found", 422)
+        assets.append(a)
+
+    try:
+        result = run_sentiment_for_universe(db, assets, timeframe=payload.timeframe)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return error_response("INVALID_CONFIG", str(exc), 422)
+    except Exception as exc:
+        db.rollback()
+        return error_response("SERVER_ERROR", str(exc), 500)
+
+    return success_response({"run_id": result["run_id"], "status": "COMPLETED"})
+
 
 class FundamentalRequest(BaseModel):
     symbols: list[str] = Field(..., min_length=1, description="Asset symbols")

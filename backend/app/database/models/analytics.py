@@ -255,6 +255,34 @@ class FundamentalResult(Base):
     )
 
 
+class SentimentResult(Base):
+    """Asset-level sentiment scores (M4 Sentiment Engine, Phase 1).
+
+    One row per (run, asset): sentiment score (-1 to 1) and label.
+    Persisted under an AnalyticsRun (engine_type=SENTIMENT).
+    UNAVAILABLE data stored as NULL with reason in result_metadata.
+    """
+
+    __tablename__ = "sentiment_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False, index=True
+    )
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assets.id"), nullable=True
+    )
+    symbol: Mapped[str] = mapped_column(String(60), nullable=False)
+    sentiment_score: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    label: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    headline_count: Mapped[int | None] = mapped_column(nullable=True)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False
+    )
+
+
 class ScenarioResult(Base):
     """Scenario analysis results (M4 Scenario Engine, Phase 1)."""
 
