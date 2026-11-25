@@ -24,6 +24,7 @@ from app.engines.backtesting.engine import (
     InsufficientData,
 )
 from app.engines.factor.engine import run_factor_for_universe, FactorConfig
+from app.engines.fundamental.engine import run_fundamental_for_universe
 from app.engines.scenario.engine import run_scenario_for_portfolio
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -475,9 +476,17 @@ def run_analytics_backtest(
     return success_response(result)
 
 
+class AttributionRequest(BaseModel):
+    portfolio_id: str = Field(..., description="Portfolio UUID")
+    benchmark_asset_id: Optional[str] = Field(None, description="Benchmark asset UUID")
+    period_start: Optional[datetime] = Field(None, description="Start of period (ISO-8601)")
+    period_end: Optional[datetime] = Field(None, description="End of period (ISO-8601)")
+    timeframe: str = Field("1d", description="Candle timeframe")
+
+
 @router.post("/attribution")
 def run_analytics_attribution(
-    payload: "AttributionRequest",
+    payload: AttributionRequest,
     db: Session = Depends(get_db),
 ):
     """Asset-level attribution for a portfolio (Phase 1).
@@ -538,13 +547,35 @@ class BacktestRequest(BaseModel):
     slippage_bps: float = Field(5.0, ge=0, description="Slippage in bps")
 
 
-class AttributionRequest(BaseModel):
-    portfolio_id: str = Field(..., description="Portfolio UUID")
-    benchmark_asset_id: Optional[str] = Field(None, description="Benchmark asset UUID")
-    period_start: Optional[datetime] = Field(None, description="Start of period (ISO-8601)")
-    period_end: Optional[datetime] = Field(None, description="End of period (ISO-8601)")
-    timeframe: str = Field("1d", description="Candle timeframe")
+@router.post("/fundamental")
+def run_analytics_fundamental(
+    payload: "FundamentalRequest",
+    db: Session = Depends(get_db),
+):
+    """Asset-level fundamental analysis (Phase 1)."""
+    from app.database.models import Asset
+    assets = []
+    for symbol in payload.symbols:
+        a = db.query(Asset).filter_by(symbol=symbol, is_active=True).first()
+        if a is None:
+            return error_response("VALIDATION_ERROR", f"asset {symbol!r} not found", 422)
+        assets.append(a)
 
+    try:
+        result = run_fundamental_for_universe(db, assets, timeframe=payload.timeframe)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return error_response("INVALID_CONFIG", str(exc), 422)
+    except Exception as exc:
+        db.rollback()
+        return error_response("SERVER_ERROR", str(exc), 500)
+
+    return success_response({"run_id": result["run_id"], "status": "COMPLETED"})
+
+class FundamentalRequest(BaseModel):
+    symbols: list[str] = Field(..., min_length=1, description="Asset symbols")
+    timeframe: str = Field("1d", description="Candle timeframe")
 
 
 class ScenarioRequest(BaseModel):

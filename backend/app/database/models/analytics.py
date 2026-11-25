@@ -226,6 +226,35 @@ class AttributionResult(Base):
     result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
+class FundamentalResult(Base):
+    """Asset-level fundamental scores (M4 Fundamental Engine, Phase 1).
+
+    One row per (run, asset): P/E, ROE, revenue growth, and composite score.
+    Persisted under an AnalyticsRun (engine_type=FUNDAMENTAL).
+    UNAVAILABLE metrics are stored as NULL with a reason in result_metadata.
+    """
+
+    __tablename__ = "fundamental_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False, index=True
+    )
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assets.id"), nullable=True
+    )
+    symbol: Mapped[str] = mapped_column(String(60), nullable=False)
+    pe: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    roe: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    revenue_growth: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    composite_score: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    rank: Mapped[int | None] = mapped_column(nullable=True)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False
+    )
+
+
 class ScenarioResult(Base):
     """Scenario analysis results (M4 Scenario Engine, Phase 1)."""
 
