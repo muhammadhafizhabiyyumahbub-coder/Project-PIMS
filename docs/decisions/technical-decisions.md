@@ -1055,3 +1055,69 @@ Watchlists (api-spec §17, 7 endpoint) **ditunda** pada fase hardening. Tidak di
 - Hindari scope creep + drift schema di tengah hardening.
 
 **Prinsip:** keberadaan endpoint di api-spec ≠ wajib diimplement sekarang. Status implementasi tiap modul harus eksplisit (implemented / deferred / blocked).
+## 7.18 AI Research §26 — Product Owner Decisions (2026-11-25)
+
+**Status:** APPROVED WITH CONDITIONS (2026-11-25). Keputusan owner via GPT brief #3 (menjawab `gpt_brief_3.md` §P0).
+
+**Konteks:** AI Research spec §26 "Decisions Requiring Approval" — 10 item. Owner memberi keputusan per-item. Keputusan ini mengikat implementasi; OpenCode/Hermes tidak boleh mengubah tanpa persetujuan baru.
+
+### Keputusan per-item
+
+| # | Item | Keputusan | Detail / Syarat |
+|---|---|---|---|
+| 1 | Primary LLM Provider | **APPROVED (conditional)** | OpenAI-compatible, endpoint `https://apihub.agnes-ai.com`. Gunakan konfigurasi yang sudah tersedia. **Jangan mengubah atau menampilkan API key.** |
+| 2 | Secondary LLM Provider | **DEFERRED** | Jangan tambahkan fallback provider sekarang. |
+| 3 | Default Model | **APPROVED (conditional)** | `agnes-3.0-flash` untuk development + testing. Model **harus bisa diganti via konfigurasi tanpa ubah source code** (sudah true: `PIMS_LLM_MODEL`). |
+| 4 | News Data Provider | **DEFERRED** | AI Research sementara hanya pakai data internal deterministic engines. |
+| 5 | Fundamental Data Provider | **DEFERRED** | Tunggu keputusan Fundamental Engine. |
+| 6 | Macro Data Provider | **DEFERRED** | Tunggu keputusan Macro Engine. |
+| 7 | Research Execution Mechanism | **APPROVED** | Synchronous untuk tahap sekarang. Wajib: timeout, bounded execution, error handling; request tak boleh menggantung saat provider lambat/gagal. Rancang interface agar async bisa ditambahkan nanti. |
+| 8 | Research Retention Policy | **DEFERRED** | Jangan tetapkan kebijakan penyimpanan permanen sebagai final. Inventarisasi data yang disimpan + kebutuhan penghapusan. **Jangan buat migration retensi sebelum kebijakan disepakati.** |
+| 9 | Model Routing Policy | **DEFERRED** | Gunakan satu model yang sudah disetujui (#3). |
+| 10 | External Data Sharing Policy | **APPROVED (strict restrictions)** | Lihat rincian di bawah. |
+
+### Rincian item #10 — External Data Sharing (strict)
+
+Hanya kirim data yang diperlukan untuk research, dalam bentuk **sanitized + minimized deterministic analysis summaries**:
+
+- **Dilarang dikirim ke LLM:** API keys, credentials, personal identifiers, raw transaction history, raw account information, detail posisi/kepemilikan aset yang dapat mengidentifikasi pengguna.
+- **Periksa kebijakan provider** (data retention, training, privacy) sebelum memakai data pribadi/portofolio nyata.
+- **Jangan simpan sensitive prompt payload** dalam log.
+- **AI tidak menggantikan** hasil deterministic engines (konsisten 9.1).
+
+### Implikasi implementasi (untuk engine + AI Research)
+
+1. **Provider/model:** `OpenAICompatibleProvider.from_settings()` sudah membaca `PIMS_LLM_BASE_URL` + `PIMS_LLM_MODEL` + `PIMS_LLM_API_KEY` — tak perlu ubah source; cukup konfigurasi `.env` (secret tak pernah diubah/ditampilkan).
+2. **Synchronous + bounded:** orchestrator sudah punya bounded retry + provider gate; tambah **timeout eksplisit** per LLM call + interface yang memungkinkan swap ke async (tanpa rewrite).
+3. **Sanitization:** context builder hanya mengirim summary deterministik (risk, allocation, correlation, regime, scanner score) — bukan raw account/posisi/ID. Tambah guard di `context_builder/builder.py` bila perlu.
+4. **No retensi migration:** jangan buat tabel/retensi sampai #8 di-approve.
+5. **News/fundamental/macro:** tetap deferred — tak ada wiring provider eksternal.
+
+### M4 Engine Priority (owner decision)
+
+Urutan implementasi (kode hanya setelah metodologi di-approve):
+
+1. **Backtesting Engine**
+2. **Factor Engine**
+3. **Attribution Engine**
+4. **Scenario Analysis Engine**
+
+`Fundamental`, `Macro`, `Sentiment` tetap di roadmap tapi implementasi **DEFERRED** sampai kebutuhan data + metodologi disetujui.
+
+### Format proposal (owner decision)
+
+Opsi **B**: technical gap proposal + acceptance criteria dulu, untuk **ketujuh** engine (backtesting, factor, attribution, scenario, fundamental, macro, sentiment). 14 section per proposal (tujuan/scope, alternatif metodologi, rekomendasi + alasan, formula + definisi metrik, data input + sumber, availability + kualitas, dependency, DB schema, API + output contract, risiko + keterbatasan, unit + integration test, acceptance criteria, tahapan implementasi, keputusan yang butuh approval).
+
+**Aturan ketat:** jangan mengarang formula finansial atau mengunci metodologi tanpa persetujuan. Implementasi kode hanya dimulai setelah metodologi engine terkait di-approve.
+
+### Guidance per-engine (owner)
+
+- **Backtesting:** historical data integrity, prevent look-ahead bias, survivorship bias, transaction costs, slippage, corporate actions, out-of-sample, walk-forward, benchmark comparison, reproducibility.
+- **Factor:** pisahkan market-based vs fundamental-based; jangan asumsikan fundamental tersedia; definisikan factor universe, normalization, weighting, rebalance, missing-data policy.
+- **Attribution:** evaluasi Brinson-Fachler vs return-based; jelaskan kebutuhan benchmark, sektor, klasifikasi aset, periode, kontribusi alokasi vs seleksi.
+- **Scenario:** evaluasi historical scenarios, hypothetical shocks, sensitivity analysis; jangan tetapkan shock magnitude/probabilitas tanpa metodologi disetujui.
+- **Fundamental:** evaluasi metrik, kualitas laporan keuangan, periode pelaporan, currency, missing values, provider limitations.
+- **Macro:** evaluasi indikator, frekuensi data, revision policy, lag, definisi regime.
+- **Sentiment:** evaluasi news vs social, source reliability, deduplication, timestamp, bahasa, model, aggregation.
+
+**Prinsip:** keputusan metodologi engine tetap milik Product Owner. Proposal = bahan review, bukan izin implementasi.
