@@ -77,7 +77,7 @@ def run_scanner(
             
         # Determine provider
         m = next((m for a, pi, pd, m in results if a.id == asset.id), None)
-        is_crypto = m and m.code == "CRYPTO"
+        is_crypto = asset.asset_type == "CRYPTO"
         chosen_provider_code = provider_code if is_crypto else "YAHOO"
         
         pi = next((pi for a, pi, pd, m in results if a.id == asset.id and pd.code == chosen_provider_code), None)
