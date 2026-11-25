@@ -10,7 +10,7 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `dda517c` | `git log --oneline -1` |
+| Commit terakhir | `7e2f6f4` (P2 scanner hardening + 10 integration test) | `git log --oneline -1` |
 | Backend test | **270 passed, 0 failed, 1 skipped** (LOKAL, suite penuh) | `pytest tests -q` (PostgreSQL 17 lokal) |
 | Bug P0 (fixture) | ~~`test_ingest_quotes_timeout_failed` AttributeError~~ **selesai** (`dda517c`): fixture `Market CRYPTO` dibuat bila tak ada | `pytest tests/test_market_ingestion.py::test_ingest_quotes_timeout_failed` |
 | CI GitHub Actions | **HIJAU** — run `dda517c` (CI #37) `conclusion: success` (backend+frontend+migrations) | API `actions/runs` |
@@ -34,7 +34,7 @@ Catatan jujur: US/IDX **bukan** integrasi provider resmi (Finnhub/Alpaca/IDX API
 ## 1.2 Scanner (audit 2026-11-25)
 
 - Sudah benar: provider isolation (`load_candles` per `provider_id`), `MIN_CANDLES=50` guard, skipped reasons, ranking traceable (`rank/score/metric_snapshot/data_timestamp`), `freshness_status`.
-- Temuan: (1) provider selection `service.py:80-81` pakai `market.code` — aset `market_id=NULL` salah provider; (2) 8 skenario integration test belum ada. → **Stage P2 in progress** (OpenCode).
+- Temuan: (1) provider selection `service.py:80-81` pakai `market.code` — aset `market_id=NULL` salah provider; (2) 8 skenario integration test belum ada. → **P2 SELESAI** `7e2f6f4`: fix `is_crypto = asset.asset_type == "CRYPTO"` + fallback provider + 10 integration test (10/10 passed).
 
 ## 2. Milestone selesai
 
@@ -54,7 +54,7 @@ Catatan jujur: US/IDX **bukan** integrasi provider resmi (Finnhub/Alpaca/IDX API
 | P4 | Sinkronisasi docs status (state doc §1/§1.1/§1.2/§3, api-spec §17 deferred, technical-decisions §7.17) | P1 | **SELESAI** 2026-11-25 — semua angka sinkron dgn commit `dda517c` + CI #37 | docs | lulus: docs sinkron |
 | W | Analytics instrument-scope + **watchlists** (butuh keputusan: tabel tidak ada di schema-spec) | P2/P3 | **DEFERRED** (keputusan owner 2026-11-25 via audit GPT): single-user, tak ada tabel `users`; PIMS single-user. Tandai `DEFERRED/NOT IMPLEMENTED` di api-spec §17 tanpa ubah kontrak. Kriteria aktivasi: selesai P2/P3 + owner setujui skema dua-tabel (`watchlists` + `watchlist_items`, tanpa `user_id`). | `api-spec.md §17` (ditandai deferred) | keputusan: tunda; skema 2 tabel disepakat di `technical-decisions` |
 | P0 | Perbaiki `test_ingest_quotes_timeout_failed` (fixture `Market CRYPTO` tak ada → `AttributeError`) | P0 | **SELESAI** `dda517c` (pushed) — CI #37 hijau, suite 270 passed | `test_market_ingestion.py` | lulus: test terisolasi passed, suite 270/0/1, CI #37 success |
-| P2 | Hardening scanner: perbaiki provider-selection edge (`market_id=NULL`) + 10 integration test (crypto/US/IDX/mixed/missing/insufficient/timeout/stale/currency/isolation) | P2 | **in progress** (OpenCode) | `scanner/service.py`, `tests/test_scanner_integration.py` | pending |
+| P2 | Hardening scanner: perbaiki provider-selection edge (`market_id=NULL`) + 10 integration test (crypto/US/IDX/mixed/missing/insufficient/timeout/stale/currency/isolation) | P2 | **SELESAI** `7e2f6f4` (pushed) — 10/10 scanner test passed; suite penuh pending (PostgreSQL stuck) | `scanner/service.py`, `tests/test_scanner_integration.py` | lulus: 10 scanner test passed; fix: fallback provider selection (US/IDX tanpa YAHOO mapping) |
 | Y | Sinkronisasi dokumen tiap tahap + laporan test rilis | P1 | planned | docs | — |
 | Z | Docker dev environment | P3 | **ditunda owner** (butuh reboot fisik + WSL2) | — | — |
 
