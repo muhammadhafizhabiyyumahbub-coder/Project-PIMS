@@ -278,31 +278,35 @@ def test_candle_ingestion_404_no_retry(db_session):
     assert len(transport.requests) == 1  # no retry for 404
 
 
-def test_candle_ingestion_transport_error_failed(db_session):
-    """transport error -> failed with real message."""
+def test_ingest_candles_timeout_failed(db_session):
+    """timeout error -> failed with read timeout reason, other assets processed."""
     provider = _get_or_create_provider(db_session)
-    asset = Asset(symbol="RETRY_TRANSPORT", name="Retry Transport", asset_type="CRYPTO", quote_currency="USD", is_active=True)
-    db_session.add(asset)
+    asset1 = Asset(symbol="TIMEOUT_1", name="Timeout 1", asset_type="CRYPTO", quote_currency="USD", is_active=True)
+    asset2 = Asset(symbol="SUCCESS_2", name="Success 2", asset_type="CRYPTO", quote_currency="USD", is_active=True)
+    db_session.add_all([asset1, asset2])
     db_session.commit()
     
     with db_session.no_autoflush:
-        pi = ProviderInstrument(asset_id=asset.id, provider_id=provider.id, provider_symbol="RETRY-TRANSPORT", is_active=True)
-        db_session.add(pi)
+        db_session.add(ProviderInstrument(asset_id=asset1.id, provider_id=provider.id, provider_symbol="T1", is_active=True))
+        db_session.add(ProviderInstrument(asset_id=asset2.id, provider_id=provider.id, provider_symbol="S2", is_active=True))
         db_session.commit()
 
-    class FailingTransport:
+    class TimeoutTransport:
         def handle_request(self, request):
-            raise httpx.ConnectError("connection reset by peer")
+            if "T1" in str(request.url):
+                raise httpx.TimeoutException("The read operation timed out")
+            return httpx.Response(200, json={"chart": {"result": [{"timestamp": [int(datetime.now(timezone.utc).timestamp())], "indicators": {"quote": [{"open": [10.0], "high": [11.0], "low": [9.0], "close": [10.5], "volume": [100.0]}]}}]}})
             
     import app.data.ingestion.ingest as ing
     orig = ing.YahooProvider
-    ing.YahooProvider = lambda *a, **kw: orig(base_url="http://fail", transport=FailingTransport())
+    ing.YahooProvider = lambda *a, **kw: orig(base_url="http://timeout", transport=TimeoutTransport())
     
     res = ingest_candles()
     ing.YahooProvider = orig
     
     assert res["failed"]
-    assert "connection reset by peer" in res["failed"][0]["reason"]
+    assert any("timed out" in f["reason"] for f in res["failed"])
+    assert res["written"] == 1
 
 # === Restored pipeline tests (removed by a later round without replacement) ===
 

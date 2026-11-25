@@ -893,3 +893,54 @@ def test_ingest_quotes_no_candles_data_currency_is_none(db_session):
     # but based on the code, if klines is empty, it skips.
     # The MockTransport logic in this specific case with empty result returns a payload that should hit `if not klines`
     # Let's inspect klines logic in ingest_quotes
+
+
+def test_ingest_quotes_timeout_failed(db_session):
+    """A read timeout on one pair must fail that pair with a readable reason while the
+    other pairs still ingest -- timeouts are a distinct failure mode from a generic
+    transport error, so both paths need their own guard."""
+    provider = db_session.query(DataProvider).filter_by(code="YAHOO").first()
+    if provider is None:
+        provider = DataProvider(code="YAHOO", name="Yahoo", provider_type="CRYPTO")
+        db_session.add(provider)
+        db_session.commit()
+    m_crypto = db_session.query(Market).filter_by(code="CRYPTO").first()
+    slow = Asset(symbol="SLOW_QT", name="Slow Quote", asset_type="CRYPTO",
+                 quote_currency="USD", market_id=m_crypto.id, is_active=True)
+    fine = Asset(symbol="FINE_QT", name="Fine Quote", asset_type="CRYPTO",
+                 quote_currency="USD", market_id=m_crypto.id, is_active=True)
+    db_session.add_all([slow, fine])
+    db_session.commit()
+    with db_session.no_autoflush:
+        db_session.add_all([
+            ProviderInstrument(asset_id=slow.id, provider_id=provider.id, provider_symbol="SLOWQT", is_active=True),
+            ProviderInstrument(asset_id=fine.id, provider_id=provider.id, provider_symbol="FINEQT", is_active=True),
+        ])
+        db_session.commit()
+
+    class TimeoutTransport:
+        def handle_request(self, request):
+            if "SLOWQT" in str(request.url):
+                raise httpx.TimeoutException("The read operation timed out")
+            return httpx.Response(200, json={
+                "chart": {"result": [{
+                    "meta": {"currency": "USD", "regularMarketPrice": 42.5},
+                    "timestamp": [int(datetime.now(UTC).timestamp())],
+                    "indicators": {"quote": [{
+                        "open": [42.0], "high": [43.0], "low": [41.5], "close": [42.5], "volume": [1000.0],
+                    }]},
+                }]},
+            })
+
+    import app.data.ingestion.quotes as iq
+    orig = iq.YahooProvider
+    iq.YahooProvider = lambda *a, **kw: orig(base_url="http://timeout", transport=TimeoutTransport())
+    try:
+        res = ingest_quotes(db_session)
+    finally:
+        iq.YahooProvider = orig
+
+    failed_symbols = {f["symbol"] for f in res["failed"]}
+    assert "SLOW_QT" in failed_symbols, f"timeout must be reported as failed: {res['failed']}"
+    assert any("timed out" in f["reason"].lower() for f in res["failed"])
+    assert res["written"] >= 1, "pairs without a timeout must still be ingested"
