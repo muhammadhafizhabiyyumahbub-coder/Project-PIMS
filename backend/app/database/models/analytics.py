@@ -156,3 +156,21 @@ class CorrelationResult(Base):
     observation_period: Mapped[str | None] = mapped_column(String(30), nullable=True)
     calculation_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
     result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class BacktestMetrics(Base):
+    """Deterministic backtest run metrics (M4 Backtesting Engine, Phase 1).
+
+    Long format: one row per metric so the metric set can grow without
+    schema changes. Persisted under an AnalyticsRun (engine_type=BACKTESTING).
+    """
+
+    __tablename__ = "backtest_metrics"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False
+    )
+    metric: Mapped[str] = mapped_column(String(50), nullable=False)
+    value: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

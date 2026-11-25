@@ -12,6 +12,7 @@ from app.database.models.portfolio import (
 from app.database.models.analytics import (
     AllocationResult,
     AnalyticsRun,
+    BacktestMetrics,
     CorrelationResult,
     MarketRegimeResult,
     PerformanceResult,
@@ -34,6 +35,7 @@ __all__ = [
     "PerformanceResult",
     "AllocationResult",
     "CorrelationResult",
+    "BacktestMetrics",
     "ScannerRun",
     "ScannerResult",
     "ResearchRequest",

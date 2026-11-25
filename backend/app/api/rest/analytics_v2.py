@@ -18,6 +18,10 @@ from app.engines.technical.engine import compute as compute_technical
 from app.engines.market_regime.engine import classify as classify_regime
 from app.engines.runner import load_candles
 from app.engines.correlation.engine import run_correlation_for_portfolio
+from app.engines.backtesting.engine import (
+    run_backtest_for_assets,
+    InsufficientData,
+)
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -416,3 +420,66 @@ def get_analytics_correlation(
         raise
 
     return success_response(result)
+
+
+@router.post("/backtest")
+def run_analytics_backtest(
+    payload: "BacktestRequest",
+    db: Session = Depends(get_db),
+):
+    """Deterministic Phase-1 backtest (BUY_HOLD / STATIC_WEIGHT) over stored
+    candles. Persists to analytics_runs (BACKTESTING) + backtest_metrics.
+
+    No network / no signal — Phase 2 rule-based strategies are gated behind
+    owner approval (see docs/management/m4-gap-proposals/01-backtesting.md).
+    """
+    from app.database.models import Asset
+
+    assets = []
+    for symbol in payload.symbols:
+        a = db.query(Asset).filter_by(symbol=symbol, is_active=True).first()
+        if a is None:
+            return error_response(
+                "VALIDATION_ERROR", f"active asset {symbol!r} not found", 422
+            )
+        assets.append(a)
+    if not assets:
+        return error_response("VALIDATION_ERROR", "no symbols supplied", 422)
+
+    weights = payload.weights or {s: 1.0 / len(payload.symbols) for s in payload.symbols}
+
+    try:
+        result = run_backtest_for_assets(
+            db,
+            assets,
+            weights=weights,
+            strategy=payload.strategy,
+            timeframe=payload.timeframe,
+            limit=payload.limit,
+            rebalance_every=payload.rebalance_every,
+            fee_bps=payload.fee_bps,
+            slippage_bps=payload.slippage_bps,
+        )
+        db.commit()
+    except InsufficientData as exc:
+        return error_response("INSUFFICIENT_DATA", str(exc), 422)
+    except ValueError as exc:
+        return error_response("INVALID_CONFIG", str(exc), 422)
+    except Exception as exc:
+        db.rollback()
+        return error_response("SERVER_ERROR", str(exc), 500)
+
+    return success_response(result)
+
+
+class BacktestRequest(BaseModel):
+    symbols: list[str] = Field(..., min_length=1, description="Asset symbols to backtest")
+    strategy: str = Field("STATIC_WEIGHT", pattern="^(BUY_HOLD|STATIC_WEIGHT)$")
+    weights: Optional[dict[str, float]] = Field(
+        None, description="Target weight per symbol (normalized); default equal"
+    )
+    timeframe: str = Field("1d", description="Candle timeframe")
+    limit: int = Field(300, ge=60, le=2000, description="Max candles per asset")
+    rebalance_every: int = Field(21, ge=1, description="Rebalance schedule (periods)")
+    fee_bps: float = Field(10.0, ge=0, description="Transaction fee in bps")
+    slippage_bps: float = Field(5.0, ge=0, description="Slippage in bps")
