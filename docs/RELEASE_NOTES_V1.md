@@ -1,11 +1,44 @@
 # PIMS V1 — Release Notes
 
 **Status:** Release Candidate — **belum dirilis**.
-**Tanggal:** 19 November 2026
+**Tanggal terakhir update:** 25 November 2026 (M4 analytics engine: 6/7 engine).
 
 Dokumen ini merangkum fitur yang benar-benar ada pada kode saat ini, apa yang
 belum ada, dan catatan schema/migration. Tidak ada klaim bahwa V1 sudah selesai
 atau sudah dirilis.
+
+---
+
+## 0. Update 25 Nov 2026 — M4 Analytics Engine (6/7)
+
+Enam engine analisis portfolio (Milestone M4) **SELESAI + CI hijau**:
+
+| Engine | Endpoint | Status | Bukti |
+|---|---|---|---|
+| Correlation (M1) | `GET /analytics/correlation` | ✅ | 15/15 test |
+| Backtesting Phase 1 | `POST /analytics/backtest` | ✅ | 9/9 test, CI #52 |
+| Factor Phase 1 | `POST /analytics/factor` | ✅ | 9/9 test, CI #53 |
+| Attribution Phase 1 | `POST /analytics/attribution` | ✅ | 9/9 test, CI #54 |
+| Scenario Phase 1 | `POST /analytics/scenario` | ✅ | 6/6 test, CI #55 |
+| Fundamental Phase 1 | `POST /analytics/fundamental` | ✅ | 8/8 test, CI #59/#60 |
+| Sentiment Phase 1 | `POST /analytics/sentiment` | ✅ (honest-UNAVAILABLE tanpa RSS) | 10/10 test, CI #62 |
+
+- Semua engine **deterministik**, tanpa network di test (mock transport), tanpa ubah
+  `.env`/credential.
+- **UNAVAILABLE / INSUFFICIENT_DATA / INVALID_CONFIG** honest: data tak ada →
+  bukan 0/skor acak (mis. fundamental tak ada P/E → UNAVAILABLE + reason;
+  sentiment Phase 1 belum wire RSS → UNAVAILABLE "no news source wired").
+- **Scenario hypothetical + Backtesting rule-based = GATED §26** (owner; belum implement).
+- **Macro engine (M4 #6) = TUNDA** — butuh FRED API key (owner).
+- Migration chain (head tunggal `d6e7f8a9b0c1`):
+  `8f3a2d91 → 5c7e2a90 (backtest) → 9b4f1c6e (factor) → a1b2c3d4 (attribution) →
+  b3c4d5e6 (scenario) → c5d6e7f8 (fundamental) → d6e7f8a9b0 (sentiment)`.
+- Full regression suite: **331+ passed, 0 failed** (deselect LLM+ingestion).
+
+**Berikutnya menuju final release:**
+1. RSS adapter (Sentiment Phase 1b) — upgrade UNAVAILABLE → fungsional (gratuit, tanpa key).
+2. Macro engine — butuh FRED API key (owner).
+3. Smoke-test live API + tag `v1.0` + push.
 
 ---
 

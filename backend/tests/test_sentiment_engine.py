@@ -1,4 +1,4 @@
-"""M4 Sentiment Engine — Phase 1 tests (RSS headlines via LLM).
+"""M4 Sentiment Engine — Phase 1b tests (RSS headlines via adapter + LLM).
 
 Covers: weighted aggregate math, UNAVAILABLE handling, endpoint + persistence,
 determinism, §26 sanitization (no PII/credentials in response).
@@ -21,6 +21,7 @@ from app.database.models import (
     Portfolio,
 )
 from app.engines.sentiment.engine import run_sentiment_for_universe, aggregate_sentiment
+from app.data.providers.news.rss import RSSNewsAdapter
 
 client = TestClient(app)
 
@@ -147,33 +148,37 @@ def test_sentiment_endpoint_persists(db_session, sentiment_setup):
     """Test endpoint persists analytics_runs(SENTIMENT) + sentiment_results."""
     setup = sentiment_setup
 
-    resp = client.post("/api/v1/analytics/sentiment", json={
-        "symbols": [setup["symbol_a"], setup["symbol_b"]],
-        "timeframe": "1d",
-    })
-    assert resp.status_code == 200, resp.text
-    data = resp.json()["data"]
-    assert data["status"] == "COMPLETED"
-    assert "run_id" in data
+    # Mock RSS feed returning empty (no headlines at all)
+    with patch("app.engines.sentiment.engine.RSSNewsAdapter.fetch_headlines") as mock_fetch:
+        mock_fetch.return_value = []
 
-    # Check persistence
-    run_id = data["run_id"]
-    run = db_session.get(AnalyticsRun, run_id)
-    assert run is not None
-    assert run.engine_type == "SENTIMENT"
+        resp = client.post("/api/v1/analytics/sentiment", json={
+            "symbols": [setup["symbol_a"], setup["symbol_b"]],
+            "timeframe": "1d",
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["status"] == "COMPLETED"
+        assert "run_id" in data
 
-    rows = db_session.query(SentimentResult).filter_by(analytics_run_id=run_id).all()
-    assert len(rows) == 2
-    symbols = {r.symbol for r in rows}
-    assert symbols == {setup["symbol_a"], setup["symbol_b"]}
+        # Check persistence
+        run_id = data["run_id"]
+        run = db_session.get(AnalyticsRun, run_id)
+        assert run is not None
+        assert run.engine_type == "SENTIMENT"
 
-    # Check UNAVAILABLE for no headlines
-    for r in rows:
-        assert r.label == "UNAVAILABLE"
-        assert r.sentiment_score is None
-        assert r.confidence is None
-        assert r.headline_count == 0
-        assert r.result_metadata.get("reason") == "no news source wired"
+        rows = db_session.query(SentimentResult).filter_by(analytics_run_id=run_id).all()
+        assert len(rows) == 2
+        symbols = {r.symbol for r in rows}
+        assert symbols == {setup["symbol_a"], setup["symbol_b"]}
+
+        # Check UNAVAILABLE for no headlines
+        for r in rows:
+            assert r.label == "UNAVAILABLE"
+            assert r.sentiment_score is None
+            assert r.confidence is None
+            assert r.headline_count == 0
+            assert r.result_metadata.get("reason") == "no matching headlines found for asset"
 
 
 def test_sentiment_insufficient_data(db_session):
@@ -265,3 +270,118 @@ def test_sentiment_engine_llm_mock(mock_engine, db_session, sentiment_setup):
     data = resp.json()["data"]
     assert data["status"] == "COMPLETED"
     mock_engine.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# RSS Adapter Integration Tests (Phase 1b)
+# ---------------------------------------------------------------------------
+
+
+@patch("app.engines.sentiment.engine.RSSNewsAdapter.fetch_headlines")
+def test_sentiment_rss_adapter_mock_returns_scores(mock_fetch, db_session, sentiment_setup):
+    """Test RSS adapter mock returns scores (not UNAVAILABLE) when headlines match."""
+    setup = sentiment_setup
+    
+    # Mock RSS feed returning headlines matching our test symbols
+    mock_fetch.return_value = [
+        {"title": "SENT_A reports strong quarterly earnings", "pub_date": "2024-01-15T10:00:00Z", "source": "RSS_FEED"},
+        {"title": "SENT_B stock falls on weak guidance", "pub_date": "2024-01-15T11:00:00Z", "source": "RSS_FEED"},
+    ]
+
+    resp = client.post("/api/v1/analytics/sentiment", json={
+        "symbols": [setup["symbol_a"], setup["symbol_b"]],
+        "timeframe": "1d",
+    })
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["status"] == "COMPLETED"
+
+    # Check persisted results have scores
+    run_id = data["run_id"]
+    rows = db_session.query(SentimentResult).filter_by(analytics_run_id=run_id).all()
+    assert len(rows) == 2
+    for r in rows:
+        assert r.headline_count == 1
+        assert r.label != "UNAVAILABLE"
+        assert r.sentiment_score is not None
+        assert -1.0 <= r.sentiment_score <= 1.0
+        assert r.confidence is not None
+
+
+@patch("app.engines.sentiment.engine.RSSNewsAdapter.fetch_headlines")
+def test_sentiment_rss_adapter_no_matching_headlines(mock_fetch, db_session, sentiment_setup):
+    """Test UNAVAILABLE when headlines exist but none match the asset."""
+    setup = sentiment_setup
+    
+    # Mock RSS feed with unrelated headlines
+    mock_fetch.return_value = [
+        {"title": "XYZ Corp reports earnings", "pub_date": "2024-01-15T10:00:00Z", "source": "RSS_FEED"},
+        {"title": "ABC Inc stock moves up", "pub_date": "2024-01-15T11:00:00Z", "source": "RSS_FEED"},
+    ]
+
+    resp = client.post("/api/v1/analytics/sentiment", json={
+        "symbols": [setup["symbol_a"], setup["symbol_b"]],
+        "timeframe": "1d",
+    })
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["status"] == "COMPLETED"
+
+    # Check persisted results are UNAVAILABLE
+    run_id = data["run_id"]
+    rows = db_session.query(SentimentResult).filter_by(analytics_run_id=run_id).all()
+    assert len(rows) == 2
+    for r in rows:
+        assert r.headline_count == 0
+        assert r.label == "UNAVAILABLE"
+        assert r.sentiment_score is None
+        assert r.result_metadata.get("reason") == "no matching headlines found for asset"
+
+
+@patch("app.engines.sentiment.engine.RSSNewsAdapter.fetch_headlines")
+def test_sentiment_rss_adapter_feed_failure(mock_fetch, db_session, sentiment_setup):
+    """Test UNAVAILABLE when RSS feed fetch fails (network error)."""
+    setup = sentiment_setup
+    
+    # Mock RSS feed failure (empty list = network/parse error)
+    mock_fetch.return_value = []
+
+    resp = client.post("/api/v1/analytics/sentiment", json={
+        "symbols": [setup["symbol_a"], setup["symbol_b"]],
+        "timeframe": "1d",
+    })
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["status"] == "COMPLETED"
+
+    run_id = data["run_id"]
+    rows = db_session.query(SentimentResult).filter_by(analytics_run_id=run_id).all()
+    for r in rows:
+        assert r.headline_count == 0
+        assert r.label == "UNAVAILABLE"
+        assert r.result_metadata.get("reason") == "no matching headlines found for asset"
+
+
+def test_sentiment_response_contains_source_field(db_session, sentiment_setup):
+    """Test response/metadata includes 'source' field for Phase 1b."""
+    setup = sentiment_setup
+
+    # Mock to ensure we get matched headlines
+    with patch("app.engines.sentiment.engine.RSSNewsAdapter.fetch_headlines") as mock_fetch:
+        mock_fetch.return_value = [
+            {"title": f"{setup['symbol_a']} surges on earnings beat", "pub_date": "2024-01-15T10:00:00Z", "source": "RSS_FEED"},
+        ]
+        
+        resp = client.post("/api/v1/analytics/sentiment", json={
+            "symbols": [setup["symbol_a"]],
+            "timeframe": "1d",
+        })
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        
+        # Check persisted metadata has source
+        run_id = data["run_id"]
+        row = db_session.query(SentimentResult).filter_by(analytics_run_id=run_id).first()
+        assert row is not None
+        assert row.result_metadata.get("source") == "RSS_FEED"
+        assert "sanitized" in row.result_metadata
