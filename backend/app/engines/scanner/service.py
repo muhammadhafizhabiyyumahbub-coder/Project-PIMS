@@ -9,6 +9,7 @@ from app.data.validation.freshness import freshness_status
 from app.database.models import Asset, DataProvider, ProviderInstrument, ScannerResult, ScannerRun, Market
 from app.engines import scanner
 from app.engines.runner import load_candles
+from app.ai.research.orchestrator import create_request
 
 MIN_CANDLES = 50
 
@@ -152,4 +153,55 @@ def run_scanner(
         "skipped": skipped_reasons,
     }
     session.commit()
+
+    # M3: scanner-trigger wiring — when enabled, auto-create a ResearchRequest
+    # for top-scoring assets so AI Research interprets scanner results on
+    # demand (spec: AI is trigger-based, never autonomous). Bounded: one
+    # request per qualifying asset, deduped/cooled by the orchestrator.
+    triggered = _maybe_trigger_research(session, evaluated, timeframe)
+    if triggered:
+        run.execution_metadata["research_triggered"] = triggered
+        session.commit()
+
     return run
+
+
+def _maybe_trigger_research(
+    session: Session, evaluated: list[dict], timeframe: str
+) -> list[dict]:
+    """Create ResearchRequests for scanner results that cross the score threshold.
+
+    Gated by ``research_scanner_trigger_enabled`` (default False — no
+    auto-research until the owner enables it). When enabled, each evaluated
+    asset with ``score >= research_min_scanner_score`` gets a request via the
+    orchestrator (dedup + cooldown + readiness gate live there, so a single
+    call is safe). Never replaces the scanner's own results — it only queues
+    AI interpretation.
+    """
+    settings = get_settings()
+    if not settings.research_scanner_trigger_enabled:
+        return []
+
+    triggered: list[dict] = []
+    for item in evaluated:
+        score = item.get("score")
+        if not isinstance(score, (int, float)):
+            continue
+        if score < settings.research_min_scanner_score:
+            continue
+        # Query the asset fresh each iteration: create_request commits the
+        # session, which expires/invalidates previously-loaded ORM objects.
+        asset = session.query(Asset).filter_by(symbol=item["symbol"]).first()
+        if asset is None:
+            continue
+        request, job, action = create_request(
+            session, asset, timeframe, trigger_type="SCANNER"
+        )
+        triggered.append({
+            "symbol": item["symbol"],
+            "score": score,
+            "request_id": str(request.id) if request else None,
+            "job_status": job.status if job else None,
+            "action": action,
+        })
+    return triggered

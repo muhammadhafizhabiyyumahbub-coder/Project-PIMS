@@ -74,6 +74,7 @@ def test_scanner_crypto_only(db_session, scanner_setup):
     """Test scanner with only crypto assets."""
     with patch("app.engines.scanner.service.get_settings") as mock_settings:
         mock_settings.return_value.crypto_provider = "BYBIT"
+        mock_settings.return_value.research_scanner_trigger_enabled = False
         # BTC: crypto, market_id=crypto_m.id
         btc = Asset(symbol="BTC", name="Bitcoin", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
         db_session.add(btc)
@@ -92,6 +93,7 @@ def test_scanner_us_stocks_only(db_session, scanner_setup):
     """Test scanner with only US stocks (Yahoo)."""
     with patch("app.engines.scanner.service.get_settings") as mock_settings:
         mock_settings.return_value.crypto_provider = "BYBIT"
+        mock_settings.return_value.research_scanner_trigger_enabled = False
         aapl = Asset(symbol="AAPL", name="Apple", asset_type="STOCK", market_id=scanner_setup["us_m"].id)
         db_session.add(aapl)
         db_session.flush()
@@ -109,6 +111,7 @@ def test_scanner_idx_only(db_session, scanner_setup):
     """Test scanner with only IDX stocks (Yahoo)."""
     with patch("app.engines.scanner.service.get_settings") as mock_settings:
         mock_settings.return_value.crypto_provider = "BYBIT"
+        mock_settings.return_value.research_scanner_trigger_enabled = False
         bbca = Asset(symbol="BBCA", name="BBCA", asset_type="STOCK", market_id=scanner_setup["idx_m"].id)
         db_session.add(bbca)
         db_session.flush()
@@ -124,6 +127,7 @@ def test_scanner_mixed_markets(db_session, scanner_setup):
     """Test scanner with mixed markets."""
     with patch("app.engines.scanner.service.get_settings") as mock_settings:
         mock_settings.return_value.crypto_provider = "BYBIT"
+        mock_settings.return_value.research_scanner_trigger_enabled = False
         btc = Asset(symbol="BTC2", name="Bitcoin", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
         aapl = Asset(symbol="AAPL2", name="Apple", asset_type="STOCK", market_id=scanner_setup["us_m"].id)
         db_session.add_all([btc, aapl])
@@ -144,6 +148,7 @@ def test_scanner_missing_provider_mapping(db_session, scanner_setup):
     """Asset without mapping should be skipped."""
     with patch("app.engines.scanner.service.get_settings") as mock_settings:
         mock_settings.return_value.crypto_provider = "BYBIT"
+        mock_settings.return_value.research_scanner_trigger_enabled = False
         nomap = Asset(symbol="NOMAP", name="No Map", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
         db_session.add(nomap)
         db_session.commit()
@@ -157,6 +162,7 @@ def test_scanner_insufficient_candles(db_session, scanner_setup):
     """Asset with < 50 candles should be skipped."""
     with patch("app.engines.scanner.service.get_settings") as mock_settings:
         mock_settings.return_value.crypto_provider = "BYBIT"
+        mock_settings.return_value.research_scanner_trigger_enabled = False
         lowdata = Asset(symbol="LOW", name="Low Data", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
         db_session.add(lowdata)
         db_session.flush()
@@ -232,6 +238,7 @@ def test_scanner_provider_isolation(db_session, scanner_setup):
     """One series = one provider, no mixing."""
     with patch("app.engines.scanner.service.get_settings") as mock_settings:
         mock_settings.return_value.crypto_provider = "BYBIT"
+        mock_settings.return_value.research_scanner_trigger_enabled = False
         iso = Asset(symbol="ISO", name="Isolated", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
         db_session.add(iso)
         db_session.flush()
@@ -247,3 +254,90 @@ def test_scanner_provider_isolation(db_session, scanner_setup):
         run = run_scanner(db_session, timeframe="1h")
         res = db_session.query(ScannerResult).filter_by(scanner_run_id=run.id, asset_id=iso.id).one()
         assert res.metric_snapshot["last_close"] == 164.0
+
+
+def test_scanner_research_trigger_enabled(db_session, scanner_setup):
+    """M3: when research_scanner_trigger_enabled=True and score crosses the
+    threshold, a ResearchRequest is auto-created (trigger_type=SCANNER)."""
+    import app.engines.scanner.service as svc
+
+    btc = Asset(symbol="BTC", name="Bitcoin", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
+    db_session.add(btc)
+    db_session.flush()
+    db_session.add(ProviderInstrument(asset_id=btc.id, provider_id=scanner_setup["bybit"].id, provider_symbol="BTCUSDT"))
+    create_candles(db_session, btc.id, scanner_setup["bybit"].id)  # score 50.0
+    db_session.commit()
+
+    calls: list = []
+
+    def fake_create_request(session, asset, timeframe, trigger_type="MANUAL"):
+        calls.append((asset.symbol, trigger_type))
+        return None, None, "CREATED"
+
+    with patch("app.engines.scanner.service.get_settings") as mock_settings, \
+         patch.object(svc, "create_request", side_effect=fake_create_request, create=True) as _mock:
+        s = mock_settings.return_value
+        s.crypto_provider = "BYBIT"
+        s.research_scanner_trigger_enabled = True
+        s.research_min_scanner_score = 10.0  # low -> 50.0 crosses
+
+        run = run_scanner(db_session, timeframe="1h", markets=["CRYPTO"])
+
+    # Trigger fired for the qualifying asset
+    assert ("BTC", "SCANNER") in calls
+    assert run.execution_metadata.get("research_triggered")
+    assert run.execution_metadata["research_triggered"][0]["symbol"] == "BTC"
+
+
+def test_scanner_research_trigger_disabled(db_session, scanner_setup):
+    """M3: when the flag is off (default), no ResearchRequest is created even
+    though the score crosses the threshold."""
+    import app.engines.scanner.service as svc
+
+    btc = Asset(symbol="BTC", name="Bitcoin", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
+    db_session.add(btc)
+    db_session.flush()
+    db_session.add(ProviderInstrument(asset_id=btc.id, provider_id=scanner_setup["bybit"].id, provider_symbol="BTCUSDT"))
+    create_candles(db_session, btc.id, scanner_setup["bybit"].id)
+    db_session.commit()
+
+    calls: list = []
+
+    with patch("app.engines.scanner.service.get_settings") as mock_settings, \
+         patch.object(svc, "create_request", side_effect=lambda *a, **k: calls.append(a), create=True):
+        s = mock_settings.return_value
+        s.crypto_provider = "BYBIT"
+        s.research_scanner_trigger_enabled = False  # default off
+        s.research_min_scanner_score = 10.0
+
+        run = run_scanner(db_session, timeframe="1h", markets=["CRYPTO"])
+
+    assert calls == []
+    assert "research_triggered" not in run.execution_metadata
+
+
+def test_scanner_research_trigger_below_threshold(db_session, scanner_setup):
+    """M3: when the score is below the threshold, no request is created even
+    with the flag enabled."""
+    import app.engines.scanner.service as svc
+
+    btc = Asset(symbol="BTC", name="Bitcoin", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
+    db_session.add(btc)
+    db_session.flush()
+    db_session.add(ProviderInstrument(asset_id=btc.id, provider_id=scanner_setup["bybit"].id, provider_symbol="BTCUSDT"))
+    create_candles(db_session, btc.id, scanner_setup["bybit"].id)  # score 50.0
+    db_session.commit()
+
+    calls: list = []
+
+    with patch("app.engines.scanner.service.get_settings") as mock_settings, \
+         patch.object(svc, "create_request", side_effect=lambda *a, **k: calls.append(a), create=True):
+        s = mock_settings.return_value
+        s.crypto_provider = "BYBIT"
+        s.research_scanner_trigger_enabled = True
+        s.research_min_scanner_score = 999.0  # high -> 50.0 does not cross
+
+        run = run_scanner(db_session, timeframe="1h", markets=["CRYPTO"])
+
+    assert calls == []
+    assert "research_triggered" not in run.execution_metadata
