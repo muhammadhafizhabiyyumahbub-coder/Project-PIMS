@@ -82,10 +82,12 @@ def run_scanner(
         
         pi = next((pi for a, pi, pd, m in results if a.id == asset.id and pd.code == chosen_provider_code), None)
         if not pi:
-            skipped_reasons.append(
-                {"symbol": asset.symbol, "reason": f"no {chosen_provider_code} mapping found"}
-            )
-            continue
+            pi = next((pi for a, pi, pd, m in results if a.id == asset.id and pd.code != chosen_provider_code), None)
+            if not pi:
+                skipped_reasons.append(
+                    {"symbol": asset.symbol, "reason": f"no {chosen_provider_code} mapping found"}
+                )
+                continue
             
         try:
             candles = load_candles(session, asset.id, timeframe, provider_id=pi.provider_id)

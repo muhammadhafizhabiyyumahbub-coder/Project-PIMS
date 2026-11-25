@@ -172,71 +172,61 @@ def test_scanner_insufficient_candles(db_session, scanner_setup):
 
 def test_scanner_provider_timeout(db_session, scanner_setup):
     """Simulate provider timeout (load_candles failure)."""
-    with patch("app.engines.scanner.service.get_settings") as mock_settings:
-        mock_settings.return_value.crypto_provider = "BYBIT"
-        btc = Asset(symbol="BTC_TO", name="Bitcoin Timeout", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
-        eth = Asset(symbol="ETH_OK", name="Ethereum OK", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
-        db_session.add_all([btc, eth])
-        db_session.flush()
-        db_session.add(ProviderInstrument(asset_id=btc.id, provider_id=scanner_setup["bybit"].id, provider_symbol="BTCUSDT"))
-        db_session.add(ProviderInstrument(asset_id=eth.id, provider_id=scanner_setup["bybit"].id, provider_symbol="ETHUSDT"))
+    btc = Asset(symbol="BTC_TO", name="Bitcoin Timeout", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
+    eth = Asset(symbol="ETH_OK", name="Ethereum OK", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
+    db_session.add_all([btc, eth])
+    db_session.flush()
+    db_session.add(ProviderInstrument(asset_id=btc.id, provider_id=scanner_setup["bybit"].id, provider_symbol="BTCUSDT"))
+    db_session.add(ProviderInstrument(asset_id=eth.id, provider_id=scanner_setup["bybit"].id, provider_symbol="ETHUSDT"))
+    
+    create_candles(db_session, eth.id, scanner_setup["bybit"].id)
+    db_session.commit()
+    
+    import app.engines.scanner.service as scanner_service
+    original_load = scanner_service.load_candles
+    
+    def mock_load(session, asset_id, timeframe, provider_id=None):
+        if asset_id == btc.id:
+            raise ValueError("Timeout")
+        return original_load(session, asset_id, timeframe, provider_id)
         
-        create_candles(db_session, eth.id, scanner_setup["bybit"].id)
-        db_session.commit()
-        
-        import app.engines.scanner.service as scanner_service
-        original_load = scanner_service.load_candles
-        
-        def mock_load(session, asset_id, timeframe, provider_id=None):
-            if asset_id == btc.id:
-                raise Exception("Timeout")
-            return original_load(session, asset_id, timeframe, provider_id)
-            
-        with patch("app.engines.scanner.service.load_candles", side_effect=mock_load):
-            # run_scanner will fail during commit because of the mocked exception
-            # that stays in the session's transaction state if not handled.
-            # However, service.py handles the exception and continues.
-            # The issue in test was session.commit() in service.py line 150.
-            run = run_scanner(db_session, timeframe="1h")
-        
-        assert eth.symbol in [db_session.get(Asset, r.asset_id).symbol for r in db_session.query(ScannerResult).filter_by(scanner_run_id=run.id).all()]
-        skipped = [s["symbol"] for s in run.execution_metadata["skipped"]]
-        assert "BTC_TO" in skipped
+    with patch("app.engines.scanner.service.load_candles", side_effect=mock_load):
+        run = run_scanner(db_session, timeframe="1h")
+    
+    assert eth.symbol in [db_session.get(Asset, r.asset_id).symbol for r in db_session.query(ScannerResult).filter_by(scanner_run_id=run.id).all()]
+    skipped = [s["symbol"] for s in run.execution_metadata["skipped"]]
+    assert "BTC_TO" in skipped
 
 def test_scanner_stale_data(db_session, scanner_setup):
     """Test freshness_status = STALE for old data."""
-    with patch("app.engines.scanner.service.get_settings") as mock_settings:
-        mock_settings.return_value.crypto_provider = "BYBIT"
-        stale = Asset(symbol="STALE", name="Stale Asset", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
-        db_session.add(stale)
-        db_session.flush()
-        db_session.add(ProviderInstrument(asset_id=stale.id, provider_id=scanner_setup["bybit"].id, provider_symbol="STALEUSDT"))
-        
-        # 24 hours old data
-        create_candles(db_session, stale.id, scanner_setup["bybit"].id, stale_hours=24)
-        db_session.commit()
-        
-        run = run_scanner(db_session, timeframe="1h")
-        res = db_session.query(ScannerResult).filter_by(scanner_run_id=run.id, asset_id=stale.id).one()
-        assert res.freshness_status == "STALE"
+    stale = Asset(symbol="STALE", name="Stale Asset", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id)
+    db_session.add(stale)
+    db_session.flush()
+    db_session.add(ProviderInstrument(asset_id=stale.id, provider_id=scanner_setup["bybit"].id, provider_symbol="STALEUSDT"))
+    
+    # 24 hours old data
+    create_candles(db_session, stale.id, scanner_setup["bybit"].id, stale_hours=24)
+    db_session.commit()
+    
+    run = run_scanner(db_session, timeframe="1h")
+    res = db_session.query(ScannerResult).filter_by(scanner_run_id=run.id, asset_id=stale.id).one()
+    assert res.freshness_status == "STALE"
 
 def test_scanner_currency_mismatch(db_session, scanner_setup):
     """Test mismatch between candle currency and asset quote_currency (should not crash)."""
-    with patch("app.engines.scanner.service.get_settings") as mock_settings:
-        mock_settings.return_value.crypto_provider = "BYBIT"
-        mismatch = Asset(symbol="MISMATCH", name="Mismatch", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id, quote_currency="USD")
-        db_session.add(mismatch)
-        db_session.flush()
-        db_session.add(ProviderInstrument(asset_id=mismatch.id, provider_id=scanner_setup["bybit"].id, provider_symbol="MISMATCHUSDT"))
-        
-        # Candle in EUR
-        create_candles(db_session, mismatch.id, scanner_setup["bybit"].id, currency="EUR")
-        db_session.commit()
-        
-        run = run_scanner(db_session, timeframe="1h")
-        assert run.result_count == 1
-        res = db_session.query(ScannerResult).filter_by(scanner_run_id=run.id, asset_id=mismatch.id).one()
-        assert res.result_status == "COMPLETED"
+    mismatch = Asset(symbol="MISMATCH", name="Mismatch", asset_type="CRYPTO", market_id=scanner_setup["crypto_m"].id, quote_currency="USD")
+    db_session.add(mismatch)
+    db_session.flush()
+    db_session.add(ProviderInstrument(asset_id=mismatch.id, provider_id=scanner_setup["bybit"].id, provider_symbol="MISMATCHUSDT"))
+    
+    # Candle in EUR
+    create_candles(db_session, mismatch.id, scanner_setup["bybit"].id, currency="EUR")
+    db_session.commit()
+    
+    run = run_scanner(db_session, timeframe="1h")
+    assert run.result_count == 1
+    res = db_session.query(ScannerResult).filter_by(scanner_run_id=run.id, asset_id=mismatch.id).one()
+    assert res.result_status == "COMPLETED"
 
 def test_scanner_provider_isolation(db_session, scanner_setup):
     """One series = one provider, no mixing."""
