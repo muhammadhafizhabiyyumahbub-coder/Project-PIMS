@@ -905,6 +905,10 @@ def test_ingest_quotes_timeout_failed(db_session):
         db_session.add(provider)
         db_session.commit()
     m_crypto = db_session.query(Market).filter_by(code="CRYPTO").first()
+    if m_crypto is None:
+        m_crypto = Market(code="CRYPTO", name="Crypto", market_type="CRYPTO")
+        db_session.add(m_crypto)
+        db_session.commit()
     slow = Asset(symbol="SLOW_QT", name="Slow Quote", asset_type="CRYPTO",
                  quote_currency="USD", market_id=m_crypto.id, is_active=True)
     fine = Asset(symbol="FINE_QT", name="Fine Quote", asset_type="CRYPTO",
