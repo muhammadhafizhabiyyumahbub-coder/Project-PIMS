@@ -22,6 +22,7 @@ from app.engines.backtesting.engine import (
     run_backtest_for_assets,
     InsufficientData,
 )
+from app.engines.factor.engine import run_factor_for_universe, FactorConfig
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -483,3 +484,56 @@ class BacktestRequest(BaseModel):
     rebalance_every: int = Field(21, ge=1, description="Rebalance schedule (periods)")
     fee_bps: float = Field(10.0, ge=0, description="Transaction fee in bps")
     slippage_bps: float = Field(5.0, ge=0, description="Slippage in bps")
+
+
+class FactorRequest(BaseModel):
+    symbols: list[str] = Field(..., min_length=1, description="Asset symbols (factor universe)")
+    factors: list[str] = Field(
+        default_factory=lambda: ["MOMENTUM", "VOLATILITY", "REVERSAL", "SIZE"],
+        description="Market-based factors to compute",
+    )
+    normalization: str = Field("ZSCORE", pattern="^(ZSCORE|RANK)$")
+    weighting: str = Field("EQUAL", description="Composite weighting (Phase 1: EQUAL)")
+    timeframe: str = Field("1d", description="Candle timeframe")
+    limit: int = Field(300, ge=60, le=2000, description="Max candles per asset")
+
+
+@router.post("/factor")
+def run_analytics_factor(payload: "FactorRequest", db: Session = Depends(get_db)):
+    """Deterministic Phase-1 market-based factor scores (momentum / volatility /
+    reversal / size) over a symbol universe. Persists to analytics_runs (FACTOR)
+    + factor_results. No network; fundamental factors are out of scope.
+    """
+    from app.database.models import Asset
+
+    assets = []
+    for symbol in payload.symbols:
+        a = db.query(Asset).filter_by(symbol=symbol, is_active=True).first()
+        if a is None:
+            return error_response(
+                "VALIDATION_ERROR", f"active asset {symbol!r} not found", 422
+            )
+        assets.append(a)
+    if not assets:
+        return error_response("VALIDATION_ERROR", "no symbols supplied", 422)
+
+    cfg = FactorConfig(
+        factors=payload.factors,
+        normalization=payload.normalization,
+        weighting=payload.weighting,
+    )
+    try:
+        result = run_factor_for_universe(
+            db, [a.id for a in assets], cfg=cfg,
+            timeframe=payload.timeframe, limit=payload.limit,
+            symbol_map={str(a.id): a.symbol for a in assets},
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return error_response("INVALID_CONFIG", str(exc), 422)
+    except Exception as exc:
+        db.rollback()
+        return error_response("SERVER_ERROR", str(exc), 500)
+
+    return success_response(result)

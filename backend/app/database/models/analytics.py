@@ -174,3 +174,29 @@ class BacktestMetrics(Base):
     metric: Mapped[str] = mapped_column(String(50), nullable=False)
     value: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
     detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class FactorResult(Base):
+    """Per-asset market-based factor scores (M4 Factor Engine, Phase 1).
+
+    One row per (run, asset): the raw factor values, their normalized (z)
+    forms, and the composite score. Persisted under an AnalyticsRun
+    (engine_type=FACTOR). Fundamental-based factors are out of scope here
+    (owner deferred) — this table holds market-based factors only.
+    """
+
+    __tablename__ = "factor_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False
+    )
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("assets.id"), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(60), nullable=False)
+    raw_factors: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    z_factors: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    composite_score: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
+    excluded: Mapped[bool] = mapped_column(default=False, nullable=False)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

@@ -83,6 +83,7 @@ def test_api_contract_snapshot():
         ("PATCH", "/api/v1/portfolios/{portfolio_id}"),
         ("PATCH", "/api/v1/scanner/configurations/{config_id}"),
         ("POST", "/api/v1/analytics/backtest"),
+        ("POST", "/api/v1/analytics/factor"),
         ("POST", "/api/v1/portfolios"),
         ("POST", "/api/v1/portfolios/{portfolio_id}/analytics/runs"),
         ("POST", "/api/v1/portfolios/{portfolio_id}/snapshots"),
