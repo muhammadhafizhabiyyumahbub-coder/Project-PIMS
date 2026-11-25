@@ -10,7 +10,7 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `10f9871` (P0: scanner InFailedSqlTransaction fix) | `git log --oneline -1` |
+| Commit terakhir | `9469e49` (docs sync; P0-scanner fix `10f9871` CI #42 hijau) | `git log --oneline -1` |
 | Backend test | **270 passed, 0 failed, 1 skipped** (LOKAL, suite penuh) | `pytest tests -q` (PostgreSQL 17 lokal) |
 | Bug P0 (fixture) | ~~`test_ingest_quotes_timeout_failed` AttributeError~~ **selesai** (`dda517c`): fixture `Market CRYPTO` dibuat bila tak ada | `pytest tests/test_market_ingestion.py::test_ingest_quotes_timeout_failed` |
 | CI GitHub Actions | **HIJAU** — run `10f9871` (CI #42) `conclusion: success` (backend+frontend+migrations) | API `actions/runs` |
@@ -58,6 +58,7 @@ Catatan jujur: US/IDX **bukan** integrasi provider resmi (Finnhub/Alpaca/IDX API
 | P0 | Perbaiki `test_ingest_quotes_timeout_failed` (fixture `Market CRYPTO` tak ada → `AttributeError`) | P0 | **SELESAI** `dda517c` (pushed) — CI #37 hijau, suite 270 passed | `test_market_ingestion.py` | lulus: test terisolasi passed, suite 270/0/1, CI #37 success |
 | P2 | Hardening scanner: perbaiki provider-selection edge (`market_id=NULL`) + 10 integration test (crypto/US/IDX/mixed/missing/insufficient/timeout/stale/currency/isolation) | P2 | **SELESAI** `7e2f6f4` (pushed) — 10/10 scanner test passed | `scanner/service.py`, `tests/test_scanner_integration.py` | lulus: 10 scanner test passed; fix: fallback provider selection |
 | P0-scanner | Perbaiki `test_scanner_provider_timeout` InFailedSqlTransaction (CI #40/#41 gagal) | P0 | **SELESAI** `10f9871` (pushed) — `service.py` rollback setelah exception di kedua `except` block (bounded, tak buang ScannerRun); test patch `app.engines.runner.load_candles` (module benar) | `scanner/service.py`, `tests/test_scanner_integration.py` | lulus: 10/10 scanner isolated; 52/53 combined (1 fail = dirty-DB suite order, bukan CI); market ingestion 23/23 |
+| P4-audit | PIMS CI recovery + autonomous engineering (brief GPT 2026-11-25): fix CI failure, validasi, audit scanner, market reality, docs audit | P0/P1/P2/P3 | **SELESAI** `9469e49` — P0-scanner fixed (`10f9871`, CI #42 hijau); P2 scanner audit done (10/10 test); P3 market reality: CRYPTO/US/IDX live-verified Yahoo; P4 docs audit: spec↔impl sinkron (59 op, 9 gap by-design, watchlist deferred) | `scanner/service.py`, `tests/test_scanner_integration.py`, docs | lulus: CI #42 success; 10/10 scanner; market 23/23 |
 | Y | Sinkronisasi dokumen tiap tahap + laporan test rilis | P1 | planned | docs | — |
 | Z | Docker dev environment | P3 | **ditunda owner** (butuh reboot fisik + WSL2) | — | — |
 
