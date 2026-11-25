@@ -1,6 +1,6 @@
 # PIMS — Autonomous Project State
 
-**Diperbarui:** 2026-11-22 (Hermes sebagai Project Director, OpenCode sebagai implementasi)
+**Diperbarui:** 2026-11-25 (Hermes sebagai Project Director, OpenCode sebagai implementasi)
 **Repo:** `D:/personal-investment-management-system` · branch `master` · remote SSH `git@github.com:muhammadhafizhabiyyumahbub-coder/Project-PIMS.git`
 **Status:** V1 Release Candidate + pengembangan lanjutan (roadmap baru)
 
@@ -10,16 +10,31 @@
 
 | Item | Nilai | Cara verifikasi |
 |---|---|---|
-| Commit terakhir | `3ea9508` | `git log --oneline -1` |
-| Backend test | **264 passed, 0 failed** (LOKAL, suite penuh; CI menjalankan suite yang sama di DB bersih) | `pytest -q` (PostgreSQL 17 lokal) |
-| Bug P0 | ~~`POST /scanner/run` 500~~ **selesai** (`39058ef`, terverifikasi 200) | `curl -X POST /api/v1/scanner/run` |
-| CI GitHub Actions | **HIJAU** — run `3ea9508` `conclusion: success` (job `backend` + `frontend`). Kegagalan didiagnosis lewat annotation (`::error::` → `/check-runs/<id>/annotations`) karena log butuh token | API `actions/runs` |
-| Backup DB | harian 03:00 → `D:\pims-backups\pims-YYYYmmdd-HHMMSS.sql.gz` (cron `pims-db-backup-daily`), simpan 7 terakhir | `gzip -dc … | grep -c "CREATE TABLE"` |
+| Commit terakhir | `dda517c` | `git log --oneline -1` |
+| Backend test | **270 passed, 0 failed, 1 skipped** (LOKAL, suite penuh) | `pytest tests -q` (PostgreSQL 17 lokal) |
+| Bug P0 (fixture) | ~~`test_ingest_quotes_timeout_failed` AttributeError~~ **selesai** (`dda517c`): fixture `Market CRYPTO` dibuat bila tak ada | `pytest tests/test_market_ingestion.py::test_ingest_quotes_timeout_failed` |
+| CI GitHub Actions | **HIJAU** — run `dda517c` (CI #37) `conclusion: success` (backend+frontend+migrations) | API `actions/runs` |
+| Backup DB | harian 03:00 → `D:\pims-backups\pims-YYYYmmdd-HHMMSS.sql.gz` (cron `pims-db-backup-daily`), simpan 7 terakhir | `gzip -dc … \| grep -c "CREATE TABLE"` |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
 | Migration head | `d2dcc981c45c` | `alembic current` |
 | Endpoint terpasang | **59 operasi**; gap spec tersisa **9** (7 `watchlists` + `PATCH`/`DELETE` transaksi — keputusan owner) | openapi vs spec diff |
 | Tabel | 22 | `__tablename__` + pg_tables |
 | Dependency | terkunci di `backend/uv.lock` (PyPI-only) | `uv lock --check` |
+
+## 1.1 Integrasi market data (audit 2026-11-25, bukti DB nyata + live Yahoo)
+
+| Market | Status | Bukti |
+|---|---|---|
+| **CRYPTO** | Implemented + **live-verified** (Yahoo); Bybit adapter ada (mock-only, ISP blokir live) | DB: `BTCUSDT/ETHUSDT/SOLUSDT` → mapping `BTC-USD/ETH-USD/SOL-USD`; candle terakhir segar; quotes `is_realtime:false` + LIVE; live probe `BTC-USD` n=10, USD, close 58867 |
+| **US STOCKS** | Implemented + **live-verified** (Yahoo, bukan Finnhub/Alpaca resmi) | Live probe `AAPL` n=10, USD, close 354.07 (market tutup → data kemarin); adapter `us_stocks/` kosong (Yahoo generic) |
+| **IDX** | Implemented + **live-verified** (Yahoo, symbol `BBCA.JK`) | Live probe `BBCA.JK` n=10, IDR, close 5800 (sekarang); adapter `indonesia/` kosong (Yahoo generic) |
+
+Catatan jujur: US/IDX **bukan** integrasi provider resmi (Finnhub/Alpaca/IDX API) — Yahoo adalah provider live. Verifikasi 2026-11-25 08:20 UTC: ketiga market mengembalikan data segar (lihat P3). Tak ada adapter khusus US/IDX — Yahoo `fetch_klines(instrument)` generic.
+
+## 1.2 Scanner (audit 2026-11-25)
+
+- Sudah benar: provider isolation (`load_candles` per `provider_id`), `MIN_CANDLES=50` guard, skipped reasons, ranking traceable (`rank/score/metric_snapshot/data_timestamp`), `freshness_status`.
+- Temuan: (1) provider selection `service.py:80-81` pakai `market.code` — aset `market_id=NULL` salah provider; (2) 8 skenario integration test belum ada. → **Stage P2 in progress** (OpenCode).
 
 ## 2. Milestone selesai
 
@@ -34,8 +49,12 @@
 |---|---|---|---|---|---|
 | U | 16 endpoint read-only (dashboard 5, markets 3, candles/asset, research list+delete, scanner 3) | P1 | **SELESAI** `e07956e` (pushed) — suite 189 passed | router API + test baru | lulus: 189 passed, 40 path/46 operasi |
 | X | Index `market_candles(asset_id,timeframe,open_time)` + hilangkan N+1 di holdings/valuation/allocation + ukur sebelum/sesudah | P1 | **SELESAI** `5516a29`+`b4b0cdf`+`420603b` (pushed) — suite 190 passed; index terjustifikasi di `technical-decisions §7.14` | migration `2462e115ce2f`, repo batch, `test_query_budget.py` | lulus: 190 passed, query konstan 10 vs 30 posisi |
-| V | Migration `market_quotes`, `fx_rates`, `scanner_configurations` (§6.1/§6.4/§8.1) + endpoint quote & CRUD config | P2 | **in progress** | migration, models, repositories, API | pending |
-| W | Analytics instrument-scope + **watchlists** (butuh keputusan: tabel tidak ada di schema-spec) | P2/P3 | blocked (keputusan owner) | — | — |
+| V | Migration `market_quotes`, `fx_rates`, `scanner_configurations` (§6.1/§6.4/§8.1) + endpoint quote & CRUD config | P2 | **SELESAI** `d2dcc981c45c` (Stage V) — ingestion quote/FX ada, cron `ingest-pims-market-data-hourly` | migration, models, repos, API | lulus: endpoint quote 200, fx=12, quotes=99 di DB nyata |
+| P3 | Real integration test `PIMS_REAL_PROVIDER=1` (Yahoo live, tanpa DB write) | P3 | **SELESAI** — gate skipif benar (skip tanpa key), live probe 2026-11-25: BTC-USD/AAPL/BBCA.JK semua n=10 + currency benar (USD/USD/IDR) | `tests/test_real_integration.py` | lulus: live probe 3 market segar |
+| P4 | Sinkronisasi docs status (state doc §1/§1.1/§1.2/§3, api-spec §17 deferred, technical-decisions §7.17) | P1 | **SELESAI** 2026-11-25 — semua angka sinkron dgn commit `dda517c` + CI #37 | docs | lulus: docs sinkron |
+| W | Analytics instrument-scope + **watchlists** (butuh keputusan: tabel tidak ada di schema-spec) | P2/P3 | **DEFERRED** (keputusan owner 2026-11-25 via audit GPT): single-user, tak ada tabel `users`; PIMS single-user. Tandai `DEFERRED/NOT IMPLEMENTED` di api-spec §17 tanpa ubah kontrak. Kriteria aktivasi: selesai P2/P3 + owner setujui skema dua-tabel (`watchlists` + `watchlist_items`, tanpa `user_id`). | `api-spec.md §17` (ditandai deferred) | keputusan: tunda; skema 2 tabel disepakat di `technical-decisions` |
+| P0 | Perbaiki `test_ingest_quotes_timeout_failed` (fixture `Market CRYPTO` tak ada → `AttributeError`) | P0 | **SELESAI** `dda517c` (pushed) — CI #37 hijau, suite 270 passed | `test_market_ingestion.py` | lulus: test terisolasi passed, suite 270/0/1, CI #37 success |
+| P2 | Hardening scanner: perbaiki provider-selection edge (`market_id=NULL`) + 10 integration test (crypto/US/IDX/mixed/missing/insufficient/timeout/stale/currency/isolation) | P2 | **in progress** (OpenCode) | `scanner/service.py`, `tests/test_scanner_integration.py` | pending |
 | Y | Sinkronisasi dokumen tiap tahap + laporan test rilis | P1 | planned | docs | — |
 | Z | Docker dev environment | P3 | **ditunda owner** (butuh reboot fisik + WSL2) | — | — |
 

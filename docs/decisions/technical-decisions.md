@@ -1027,3 +1027,31 @@ Keputusan untuk `run_scanner` (`app/engines/scanner/service.py`), merujuk
 - A slight increase in latency for initial candle resolution (one DB lookup per asset) is acceptable given current universe size.
 - A regression test case `test_provider_separation` was added to verify that only the primary provider is loaded for a given asset mapping.
 
+
+## 7.17 Watchlists Deferred + Single-User Model (2026-11-25)
+
+**Status:** APPROVED (2026-11-25). Keputusan owner via audit ChatGPT terhadap commit `dda517c`.
+
+**Decision:**
+Watchlists (api-spec §17, 7 endpoint) **ditunda** pada fase hardening. Tidak dibuat tabel, migration, model, atau endpoint. Kontrak api-spec §17 tetap berlaku (ditandai `DEFERRED`), tidak diubah.
+
+**Bukti (schema-spec @ dda517c):**
+- Tak ada tabel `users`; `portfolios` tidak punya `user_id`/`owner_id` → PIMS **single-user**.
+- `watchlists`/`watchlist_items` tidak terdefinisi di schema-spec.
+- `scanner_configurations` sudah ada (migration `d2dcc981c45c`), jangan tumpang-tindih.
+
+**Kriteria aktivasi (nanti, bukan sekarang):**
+1. P2 (scanner hardening) + P3 (real integration) selesai.
+2. Owner setujui skema dua-tabel:
+   - `watchlists` (`id` UUID PK, `name` VARCHAR(150) NOT NULL, `created_at`, `updated_at` TIMESTAMPTZ NOT NULL).
+   - `watchlist_items` (`id` UUID PK, `watchlist_id` UUID FK→watchlists NOT NULL ON DELETE CASCADE, `asset_id` UUID FK→assets NOT NULL ON DELETE RESTRICT, `created_at` TIMESTAMPTZ NOT NULL).
+   - `UNIQUE(watchlist_id, asset_id)`; index `(watchlist_id, created_at)`, `asset_id`.
+   - **Tanpa `user_id`** (single-user; ownership menyeluruh ditunda sampai multi-user).
+3. Migration + model + repository + service + API + test (13 skenario di audit GPT, termasuk cursor pagination).
+
+**Alasan tunda:**
+- Kontrak endpoint tanpa kontrak DB = ketidakkonsistenan dokumen, bukan izin implementer karang schema (AGENTS.md §5).
+- Watchlist bukan fondasi; scanner + integrasi data (P2/P3) lebih mendesak.
+- Hindari scope creep + drift schema di tengah hardening.
+
+**Prinsip:** keberadaan endpoint di api-spec ≠ wajib diimplement sekarang. Status implementasi tiap modul harus eksplisit (implemented / deferred / blocked).

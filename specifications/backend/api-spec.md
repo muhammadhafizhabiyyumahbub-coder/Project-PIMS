@@ -823,6 +823,13 @@ Dapat mencakup:
 
 Mengelola daftar instrumen yang ingin dipantau.
 
+> **STATUS: DEFERRED (2026-11-25, keputusan owner via audit).**
+> Kontrak endpoint di bawah tetap berlaku (tidak diubah), tapi **belum diimplement** pada fase
+> hardening. Alasan: `schema-spec` tidak mendefinisikan tabel `watchlists`/`watchlist_items`,
+> dan PIMS saat ini **single-user** (tak ada tabel `users`, `portfolios` tak punya `user_id`).
+> Implementasi menunggu keputusan owner + desain skema (lihat `docs/decisions/technical-decisions.md`).
+> Kriteria aktivasi: selesai hardening P2/P3, owner setujui skema dua-tabel, lalu migration + model + endpoint + test.
+
 ## 17.1 Endpoints
 
 | Method | Endpoint | Description |
