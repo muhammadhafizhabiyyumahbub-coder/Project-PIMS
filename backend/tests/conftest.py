@@ -65,6 +65,7 @@ TRUNCATE_TABLES = [
     "technical_results",
     "market_regime_results",
     "risk_results",
+    "correlation_results",
     "analytics_runs",
     "market_candles",
     "provider_instruments",

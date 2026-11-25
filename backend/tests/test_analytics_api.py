@@ -147,14 +147,15 @@ def test_analytics_market_regime_basic(db_session, analyzed_universe):
     assert "atr_pct" in data
     assert "calculation_status" in data
 
-def test_analytics_correlation_honest_not_implemented(db_session, portfolio_id):
-    """Test GET /api/v1/analytics/correlation returns honest NOT_IMPLEMENTED."""
-    pid = portfolio_id
-    
+def test_analytics_correlation_no_holdings(portfolio_id):
+    """GET /api/v1/analytics/correlation on a portfolio with no holdings returns
+    an honest INSUFFICIENT_DATA status with an empty (not None) matrix."""
+    pid = str(portfolio_id)
+
     response = client.get(f"/api/v1/analytics/correlation?portfolio_id={pid}")
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["portfolio_id"] == pid
-    assert data["correlation_matrix"] is None
-    assert data["calculation_status"] == "NOT_IMPLEMENTED"
-    assert "reason" in data
+    assert data["correlation_matrix"] == []
+    assert data["calculation_status"] == "INSUFFICIENT_DATA"
+    assert data["pairs_computed"] == 0

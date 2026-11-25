@@ -134,3 +134,25 @@ class AllocationResult(Base):
     )
     reporting_currency: Mapped[str] = mapped_column(String(10), nullable=False)
     result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class CorrelationResult(Base):
+    """Pairwise correlation output (schema-spec §7.5)."""
+
+    __tablename__ = "correlation_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False
+    )
+    asset_a_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("assets.id"), nullable=False
+    )
+    asset_b_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("assets.id"), nullable=False
+    )
+    correlation_value: Mapped[float] = mapped_column(Numeric(20, 10), nullable=False)
+    observation_count: Mapped[int | None] = mapped_column(nullable=True)
+    observation_period: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    calculation_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

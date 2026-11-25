@@ -17,6 +17,7 @@ from app.engines.allocation.allocation import allocation_for_portfolio
 from app.engines.technical.engine import compute as compute_technical
 from app.engines.market_regime.engine import classify as classify_regime
 from app.engines.runner import load_candles
+from app.engines.correlation.engine import run_correlation_for_portfolio
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -372,14 +373,16 @@ def get_analytics_market_regime(
 @router.get("/correlation")
 def get_analytics_correlation(
     portfolio_id: str = Query(..., description="Portfolio UUID"),
-    start: Optional[str] = Query(None, description="ISO-8601 start timestamp"),
-    end: Optional[str] = Query(None, description="ISO-8601 end timestamp"),
+    timeframe: str = Query("1d", description="Candle timeframe for return series"),
+    return_method: str = Query("SIMPLE", description="Return method: SIMPLE or LOG"),
+    rolling_window: int = Query(0, description="Rolling window size (0 = off)"),
+    limit: int = Query(300, description="Max candles per asset"),
     db: Session = Depends(get_db),
 ):
-    """Get correlation matrix for portfolio holdings.
-    
-    NOTE: Correlation engine formula not yet specified in api-spec.
-    Returns honest NOT_IMPLEMENTED status per spec §15 guidance.
+    """Correlation matrix for portfolio holdings (correlation-engine-spec).
+
+    Deterministic: reads stored candles, computes pairwise Pearson (spec §4.2),
+    persists to correlation_results + analytics_runs. No network/provider calls.
     """
     pid = parse_uuid(portfolio_id)
     if pid is None:
@@ -388,9 +391,28 @@ def get_analytics_correlation(
     if portfolio is None:
         return error_response("NOT_FOUND", f"portfolio {portfolio_id} not found", 404)
 
-    return success_response({
-        "portfolio_id": str(pid),
-        "correlation_matrix": None,
-        "calculation_status": "NOT_IMPLEMENTED",
-        "reason": "Correlation engine formula not yet specified in api-spec. See docs/RELEASE_KNOWN_ISSUES.md",
-    })
+    holdings = portfolio_repo.list_holdings(db, pid)
+    if not holdings:
+        return success_response({
+            "portfolio_id": str(pid),
+            "correlation_matrix": [],
+            "calculation_status": "INSUFFICIENT_DATA",
+            "reason": "portfolio has no holdings",
+            "pairs_computed": 0,
+            "series_used": 0,
+        })
+
+    try:
+        result = run_correlation_for_portfolio(
+            db, pid, holdings,
+            timeframe=timeframe,
+            ret_method=return_method,
+            rolling_window=rolling_window,
+            limit=limit,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return success_response(result)
