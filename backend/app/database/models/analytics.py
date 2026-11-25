@@ -1,6 +1,6 @@
 "Analytics engine run records and deterministic engine outputs."
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
@@ -224,3 +224,28 @@ class AttributionResult(Base):
     contribution: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
     active_contribution: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
     result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class ScenarioResult(Base):
+    """Scenario analysis results (M4 Scenario Engine, Phase 1)."""
+
+    __tablename__ = "scenario_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False, index=True
+    )
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assets.id"), nullable=True
+    )
+    symbol: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    scenario_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    shock: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    impact: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    correlated_impact: Mapped[float | None] = mapped_column(
+        Numeric(30, 12), nullable=True
+    )
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False
+    )

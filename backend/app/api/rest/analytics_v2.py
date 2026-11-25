@@ -24,6 +24,7 @@ from app.engines.backtesting.engine import (
     InsufficientData,
 )
 from app.engines.factor.engine import run_factor_for_universe, FactorConfig
+from app.engines.scenario.engine import run_scenario_for_portfolio
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -546,6 +547,17 @@ class AttributionRequest(BaseModel):
 
 
 
+class ScenarioRequest(BaseModel):
+    portfolio_id: str
+    scenario_type: str = Field(..., pattern="^(SENSITIVITY|HISTORICAL|HYPOTHETICAL)$")
+    asset_id: Optional[str] = None
+    shock: Optional[float] = None
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+    timeframe: str = "1d"
+    limit: int = Field(300, ge=2, le=2000)
+
+
 class FactorRequest(BaseModel):
     symbols: list[str] = Field(..., min_length=1, description="Asset symbols (factor universe)")
     factors: list[str] = Field(
@@ -556,6 +568,47 @@ class FactorRequest(BaseModel):
     weighting: str = Field("EQUAL", description="Composite weighting (Phase 1: EQUAL)")
     timeframe: str = Field("1d", description="Candle timeframe")
     limit: int = Field(300, ge=60, le=2000, description="Max candles per asset")
+
+
+@router.post("/scenario")
+def run_analytics_scenario(payload: "ScenarioRequest", db: Session = Depends(get_db)):
+    """Deterministic Phase-1 sensitivity or historical scenario analysis."""
+    pid = parse_uuid(payload.portfolio_id)
+    if pid is None:
+        return error_response("VALIDATION_ERROR", "invalid portfolio_id format", 422)
+    if portfolio_repo.get_portfolio(db, pid) is None:
+        return error_response("NOT_FOUND", f"portfolio {payload.portfolio_id} not found", 404)
+    params = {
+        "asset_id": payload.asset_id,
+        "shock": payload.shock,
+        "period_start": payload.period_start,
+        "period_end": payload.period_end,
+    }
+    try:
+        result = run_scenario_for_portfolio(
+            db, payload.portfolio_id, payload.scenario_type, params,
+            timeframe=payload.timeframe, limit=payload.limit,
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        return error_response("SERVER_ERROR", str(exc), 500)
+    return success_response({
+        "run_id": result["run_id"],
+        "portfolio_id": result["portfolio_id"],
+        "scenario_type": result["scenario_type"],
+        "portfolio_impact": _serialize_return(result["portfolio_impact"]),
+        "per_asset": [
+            {
+                "symbol": item["symbol"],
+                "shock": _serialize_return(item["shock"]),
+                "impact": _serialize_return(item["impact"]),
+                "correlated_impact": _serialize_return(item["correlated_impact"]),
+            }
+            for item in result["per_asset"]
+        ],
+        "status": result["status"],
+    })
 
 
 @router.post("/factor")

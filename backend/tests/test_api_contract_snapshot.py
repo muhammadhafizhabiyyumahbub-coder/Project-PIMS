@@ -85,6 +85,7 @@ def test_api_contract_snapshot():
         ("POST", "/api/v1/analytics/attribution"),
         ("POST", "/api/v1/analytics/backtest"),
         ("POST", "/api/v1/analytics/factor"),
+        ("POST", "/api/v1/analytics/scenario"),
         ("POST", "/api/v1/portfolios"),
         ("POST", "/api/v1/portfolios/{portfolio_id}/analytics/runs"),
         ("POST", "/api/v1/portfolios/{portfolio_id}/snapshots"),
