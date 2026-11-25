@@ -56,25 +56,38 @@ def run_fundamental_for_universe(
     HONEST: Yahoo data may be missing for some assets.
     If no fundamentals available -> UNAVAILABLE with reason in metadata.
     """
-    # For now, use mock/placeholder data to demonstrate the pattern.
-    # In production, this would call a fundamental data adapter/repo.
-
     factors = ["pe", "roe", "revenue_growth"]
     now = datetime.now(timezone.utc)
 
-    # Placeholder: fetch fundamentals from Yahoo (mock for now)
-    # In real implementation: use a fundamental data adapter/repo
+    # Real fetch via Yahoo quoteSummary (adapter). No fabricated numbers:
+    # every value comes from the provider or is None (+ reason, UNAVAILABLE).
+    # Crypto / thin-coverage instruments report no fundamentals -> None.
+    from app.data.providers.crypto.yahoo import YahooProvider
+    from app.database.models import DataProvider, ProviderInstrument
+
+    yahoo = YahooProvider()
+
+    def _yahoo_symbol(asset):
+        prov = session.query(DataProvider).filter_by(code="YAHOO").first()
+        if prov:
+            pi = (
+                session.query(ProviderInstrument)
+                .filter_by(asset_id=asset.id, provider_id=prov.id)
+                .first()
+            )
+            if pi and pi.provider_symbol:
+                return pi.provider_symbol
+        return asset.symbol
+
     fundamentals_map = {}
     for asset in assets:
-        # Simulate: some assets have fundamentals, some don't
-        # For testing, we'll just return UNAVAILABLE for all
-        # A real implementation would fetch from Yahoo quoteSummary
-        fundamentals_map[str(asset.id)] = {
-            "pe": None,
-            "roe": None,
-            "revenue_growth": None,
-            "reason": "Yahoo fundamental data not yet integrated in PIMS",
-        }
+        try:
+            fundamentals_map[str(asset.id)] = yahoo.fetch_fundamentals(_yahoo_symbol(asset))
+        except Exception as exc:  # network/provider failure -> honest UNAVAILABLE
+            fundamentals_map[str(asset.id)] = {
+                "pe": None, "roe": None, "revenue_growth": None,
+                "reason": f"fetch failed: {exc.__class__.__name__}",
+            }
 
     # Build raw and z-score matrices
     raw_matrix = {}
@@ -89,7 +102,7 @@ def run_fundamental_for_universe(
     # Z-score per metric (only for available values)
     z_matrix = {}
     for factor in factors:
-        present = {sym: v for sym, v in raw_matrix.items() if v.get(factor) is not None}
+        present = {sym: raw_matrix[sym][factor] for sym in raw_matrix if raw_matrix[sym].get(factor) is not None}
         if present:
             z_matrix[factor] = _normalize(present)
         else:
@@ -146,7 +159,26 @@ def run_fundamental_for_universe(
         ))
     session.flush()
 
+    per_asset = [
+        {
+            "symbol": asset.symbol,
+            "pe": f.get("pe"),
+            "roe": f.get("roe"),
+            "revenue_growth": f.get("revenue_growth"),
+            "composite_score": composite_scores.get(asset.symbol),
+            "rank": ranks.get(asset.symbol),
+            "status": "UNAVAILABLE" if (
+                f.get("pe") is None and f.get("roe") is None
+                and f.get("revenue_growth") is None
+            ) else "COMPLETED",
+            "reason": f.get("reason"),
+        }
+        for asset in assets
+        if (f := fundamentals_map.get(str(asset.id), {})) is not None
+    ]
+
     return {
         "run_id": str(run.id),
         "status": "COMPLETED",
+        "per_asset": per_asset,
     }

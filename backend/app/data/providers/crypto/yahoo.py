@@ -116,3 +116,44 @@ class YahooProvider:
         if hours <= 730:
             return "30d" if hours > 24 else "7d"
         return "1y"
+
+    def fetch_fundamentals(self, instrument: str) -> dict:
+        """Fetch fundamental ratios from Yahoo quoteSummary (best-effort).
+
+        Returns {"pe": float|None, "roe": float|None, "revenue_growth": float|None,
+        "reason": str}. For instruments without fundamental data (crypto, thin
+        coverage) the fields are None + a reason. No fabricated numbers: every
+        value comes straight from the provider or is None.
+        """
+        def _request():
+            response = self._client.get(
+                f"{self.base_url}/v10/finance/quoteSummary/{instrument}",
+                params={"modules": "defaultKeyStatistics,summaryDetail,financialData"},
+                headers=_HEADERS,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            return response
+
+        try:
+            payload = with_retry(_request).json()
+        except Exception as exc:  # network / 404 / 403
+            return {"pe": None, "roe": None, "revenue_growth": None,
+                    "reason": f"Yahoo quoteSummary unavailable: {exc.__class__.__name__}"}
+        quote = (payload.get("quoteSummary", {}).get("result") or [{}])[0]
+        key_stats = quote.get("defaultKeyStatistics", {}).get("raw") or {}
+        summary = quote.get("summaryDetail", {}).get("raw") or {}
+        fin = quote.get("financialData", {}).get("raw") or {}
+
+        def _f(d, k):
+            v = d.get(k)
+            return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+        pe = _f(summary, "trailingPe")
+        roe = _f(fin, "returnOnEquity")
+        rev_growth = _f(fin, "revenueGrowth")
+        if pe is None and roe is None and rev_growth is None:
+            reason = "no fundamental data reported (crypto / thin coverage)"
+        else:
+            reason = "ok"
+        return {"pe": pe, "roe": roe, "revenue_growth": rev_growth, "reason": reason}

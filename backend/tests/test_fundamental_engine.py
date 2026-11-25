@@ -23,6 +23,24 @@ from app.engines.fundamental.engine import run_fundamental_for_universe
 
 client = TestClient(app)
 
+# Deterministic mock of the Yahoo fundamental fetch so tests never hit the
+# network (per-symbol values: FUND_A good, FUND_B mixed, others None/UNAVAILABLE).
+_MOCK_FUNDAMENTALS = {
+    "FUND_A": {"pe": 15.0, "roe": 0.18, "revenue_growth": 0.12, "reason": "ok"},
+    "FUND_B": {"pe": 25.0, "roe": 0.08, "revenue_growth": 0.03, "reason": "ok"},
+}
+
+@pytest.fixture(autouse=True)
+def _mock_fundamental_fetch(monkeypatch):
+    from app.data.providers.crypto import yahoo as yahoo_mod
+    def _fake(self, instrument):
+        return dict(_MOCK_FUNDAMENTALS.get(instrument, {
+            "pe": None, "roe": None, "revenue_growth": None,
+            "reason": "no fundamental data reported (mock)",
+        }))
+    monkeypatch.setattr(yahoo_mod.YahooProvider, "fetch_fundamentals", _fake)
+
+
 
 # ---------------------------------------------------------------------------
 # Pure-math tests
@@ -159,6 +177,46 @@ def test_fundamental_insufficient_data(db_session):
         "timeframe": "1d",
     })
     assert resp.status_code == 422
+
+
+def test_fundamental_endpoint_returns_per_asset(db_session, fundamental_setup):
+    """Endpoint now returns per_asset (pe/roe/revenue/composite/rank/status)."""
+    setup = fundamental_setup
+    resp = client.post("/api/v1/analytics/fundamental", json={
+        "symbols": [setup["symbol_a"], setup["symbol_b"]],
+        "timeframe": "1d",
+    })
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert "per_asset" in data and len(data["per_asset"]) == 2
+    for item in data["per_asset"]:
+        assert item["pe"] is not None
+        assert item["status"] == "COMPLETED"
+        assert item["composite_score"] is not None
+
+
+def test_fundamental_unavailable_when_no_data(db_session):
+    """Asset with no fundamental data -> UNAVAILABLE + reason (not 0, not crash)."""
+    mkt = db_session.query(Market).filter_by(code="US").first()
+    if not mkt:
+        mkt = Market(code="US", name="US Stocks", market_type="STOCK")
+        db_session.add(mkt)
+    prov = db_session.query(DataProvider).filter_by(code="YAHOO").first()
+    if not prov:
+        prov = DataProvider(code="YAHOO", name="Yahoo", provider_type="GENERAL")
+        db_session.add(prov)
+    db_session.flush()
+    a = Asset(symbol="FUND_NONE", name="No Fund", asset_type="STOCK", market_id=mkt.id)
+    db_session.add(a)
+    db_session.flush()
+    db_session.add(ProviderInstrument(asset_id=a.id, provider_id=prov.id, provider_symbol="FUND_NONE"))
+    db_session.commit()
+    resp = client.post("/api/v1/analytics/fundamental", json={"symbols": ["FUND_NONE"], "timeframe": "1d"})
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["per_asset"][0]["status"] == "UNAVAILABLE"
+    assert data["per_asset"][0]["pe"] is None
+    assert data["per_asset"][0]["reason"]
 
 
 def test_fundamental_determinism(db_session, fundamental_setup):

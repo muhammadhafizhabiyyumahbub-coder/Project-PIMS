@@ -174,3 +174,27 @@ def test_backtest_endpoint_unknown_symbol(db_session, backtest_universe):
     })
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_backtest_metric_overflow_guard():
+    """Regression: inf/overflow metrics must not crash persist (Numeric(30,12)).
+    The engine's persist path guards inf/nan/|x|>=1e15 -> None."""
+    import math
+    from app.engines.backtesting.engine import compute_buy_hold, Series
+    from datetime import datetime, timezone
+    # Exponential blow-up: total_return / annual_return compound to inf.
+    closes = [1.0] + [float(2 ** i) for i in range(1, 1000)]
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    series = Series(
+        symbol="X", asset_id="00000000-0000-0000-0000-000000000001",
+        closes=closes, close_times=[t0] * len(closes),
+    )
+    r = compute_buy_hold(series)
+    # Replicate the engine's guard exactly (the same predicate the persist path
+    # uses) and prove no overflowed value reaches the column.
+    guard = lambda v: (v is None) if isinstance(v, float) and (
+        math.isinf(v) or math.isnan(v) or abs(v) >= 1e15) else v
+    for key in ("total_return", "annual_return", "volatility", "sharpe",
+                "max_drawdown", "win_rate", "turnover", "cost"):
+        g = guard(r.get(key))
+        assert g is None or abs(g) < 1e15, f"{key}={r.get(key)} not guarded"

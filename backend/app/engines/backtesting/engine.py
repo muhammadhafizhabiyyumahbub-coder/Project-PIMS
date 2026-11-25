@@ -86,7 +86,7 @@ def _collect_series(
     closes: list[float] = []
     close_times: list[datetime] = []
     for c in candles:
-        if require_closed and c.get("status") == "UNCLOSED":
+        if require_closed and c.get("candle_status") == "UNCLOSED":
             # Never back a decision on a price that is still moving.
             continue
         closes.append(float(c["close"]))
@@ -395,6 +395,12 @@ def run_backtest_for_assets(
     for key in ("total_return", "annual_return", "volatility", "sharpe",
                 "max_drawdown", "win_rate", "turnover", "cost"):
         val = raw.get(key)
+        # Guard: backtest metrics must fit Numeric(30,12) (|x| < 1e18).
+        # Compound annualization over many 1h periods can produce inf/huge
+        # values (or None) -> store None rather than overflow the column.
+        import math as _math
+        if isinstance(val, float) and (_math.isinf(val) or _math.isnan(val) or abs(val) >= 1e15):
+            val = None
         session.add(BacktestMetrics(
             analytics_run_id=run.id,
             metric=key,
