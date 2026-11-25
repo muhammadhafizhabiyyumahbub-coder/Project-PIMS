@@ -18,6 +18,7 @@ from app.engines.technical.engine import compute as compute_technical
 from app.engines.market_regime.engine import classify as classify_regime
 from app.engines.runner import load_candles
 from app.engines.correlation.engine import run_correlation_for_portfolio
+from app.engines.attribution.engine import run_attribution_for_portfolio
 from app.engines.backtesting.engine import (
     run_backtest_for_assets,
     InsufficientData,
@@ -473,6 +474,56 @@ def run_analytics_backtest(
     return success_response(result)
 
 
+@router.post("/attribution")
+def run_analytics_attribution(
+    payload: "AttributionRequest",
+    db: Session = Depends(get_db),
+):
+    """Asset-level attribution for a portfolio (Phase 1).
+
+    Persists to analytics_runs (ATTRIBUTION) + attribution_results.
+    Deterministic; no network.
+    """
+    pid = parse_uuid(payload.portfolio_id)
+    if pid is None:
+        return error_response("VALIDATION_ERROR", "invalid portfolio_id format", 422)
+    portfolio = portfolio_repo.get_portfolio(db, pid)
+    if portfolio is None:
+        return error_response("NOT_FOUND", f"portfolio {payload.portfolio_id} not found", 404)
+
+    try:
+        result = run_attribution_for_portfolio(
+            db,
+            payload.portfolio_id,
+            benchmark_asset_id=payload.benchmark_asset_id,
+            period_start=payload.period_start,
+            period_end=payload.period_end,
+            timeframe=payload.timeframe,
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        return error_response("SERVER_ERROR", str(exc), 500)
+
+    # Serialize breakdown and return
+    breakdown = []
+    for item in result["breakdown"]:
+        breakdown.append({
+            "symbol": item["symbol"],
+            "contribution": _serialize_return(item["contribution"]),
+            "active_contribution": _serialize_return(item["active_contribution"]),
+        })
+
+    return success_response({
+        "run_id": result["run_id"],
+        "portfolio_id": result["portfolio_id"],
+        "total_return": _serialize_return(result["total_return"]),
+        "active_return": _serialize_return(result["active_return"]),
+        "status": result["calculation_status"],
+        "breakdown": breakdown,
+    })
+
+
 class BacktestRequest(BaseModel):
     symbols: list[str] = Field(..., min_length=1, description="Asset symbols to backtest")
     strategy: str = Field("STATIC_WEIGHT", pattern="^(BUY_HOLD|STATIC_WEIGHT)$")
@@ -484,6 +535,15 @@ class BacktestRequest(BaseModel):
     rebalance_every: int = Field(21, ge=1, description="Rebalance schedule (periods)")
     fee_bps: float = Field(10.0, ge=0, description="Transaction fee in bps")
     slippage_bps: float = Field(5.0, ge=0, description="Slippage in bps")
+
+
+class AttributionRequest(BaseModel):
+    portfolio_id: str = Field(..., description="Portfolio UUID")
+    benchmark_asset_id: Optional[str] = Field(None, description="Benchmark asset UUID")
+    period_start: Optional[datetime] = Field(None, description="Start of period (ISO-8601)")
+    period_end: Optional[datetime] = Field(None, description="End of period (ISO-8601)")
+    timeframe: str = Field("1d", description="Candle timeframe")
+
 
 
 class FactorRequest(BaseModel):

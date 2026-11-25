@@ -121,6 +121,7 @@ def load_candles(
             "volume": float(r.volume) if r.volume is not None else None,
             "quote_volume": float(r.quote_volume) if r.quote_volume is not None else None,
             "currency": r.currency,
+            "candle_status": r.candle_status,
         }
         for r in rows
     ]

@@ -200,3 +200,27 @@ class FactorResult(Base):
     composite_score: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
     excluded: Mapped[bool] = mapped_column(default=False, nullable=False)
     result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class AttributionResult(Base):
+    """Asset-level attribution results (M4 Attribution Engine, Phase 1).
+
+    One row per (run, asset): contribution to portfolio return and active
+    contribution vs benchmark. Persisted under an AnalyticsRun
+    (engine_type=ATTRIBUTION). Phase 1 is asset-level only; Brinson-Fachler
+    (Phase 2) is gated behind owner approval.
+    """
+
+    __tablename__ = "attribution_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False, index=True
+    )
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assets.id"), nullable=True
+    )
+    symbol: Mapped[str] = mapped_column(String(60), nullable=False)
+    contribution: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    active_contribution: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
