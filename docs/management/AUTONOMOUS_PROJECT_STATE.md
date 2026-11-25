@@ -13,7 +13,7 @@
 | Commit terakhir | `10f9871` (P0: scanner InFailedSqlTransaction fix) | `git log --oneline -1` |
 | Backend test | **270 passed, 0 failed, 1 skipped** (LOKAL, suite penuh) | `pytest tests -q` (PostgreSQL 17 lokal) |
 | Bug P0 (fixture) | ~~`test_ingest_quotes_timeout_failed` AttributeError~~ **selesai** (`dda517c`): fixture `Market CRYPTO` dibuat bila tak ada | `pytest tests/test_market_ingestion.py::test_ingest_quotes_timeout_failed` |
-| CI GitHub Actions | **HIJAU** — run `dda517c` (CI #37) `conclusion: success` (backend+frontend+migrations) | API `actions/runs` |
+| CI GitHub Actions | **HIJAU** — run `10f9871` (CI #42) `conclusion: success` (backend+frontend+migrations) | API `actions/runs` |
 | Backup DB | harian 03:00 → `D:\pims-backups\pims-YYYYmmdd-HHMMSS.sql.gz` (cron `pims-db-backup-daily`), simpan 7 terakhir | `gzip -dc … \| grep -c "CREATE TABLE"` |
 | Frontend | `eslint` 0 error, `next build` hijau | `npm run lint && npm run build` |
 | Migration head | `d2dcc981c45c` | `alembic current` |
