@@ -104,6 +104,7 @@ def run_scanner(
             data_timestamps[asset.symbol] = candles[-1]["close_time"]
             processed_assets.append(asset)
         except Exception as e:
+            session.rollback()
             skipped_reasons.append({"symbol": asset.symbol, "reason": f"error loading data: {str(e)}"})
 
     # 3. Run instrument engines
@@ -113,6 +114,7 @@ def run_scanner(
         try:
             run_instrument_engines(session, asset, timeframe)
         except Exception as e:
+            session.rollback()
             skipped_reasons.append({"symbol": asset.symbol, "reason": f"engine failure: {str(e)}"})
             if asset.symbol in symbol_candles:
                 del symbol_candles[asset.symbol]

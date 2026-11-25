@@ -190,7 +190,7 @@ def test_scanner_provider_timeout(db_session, scanner_setup):
             raise ValueError("Timeout")
         return original_load(session, asset_id, timeframe, provider_id)
         
-    with patch("app.engines.scanner.service.load_candles", side_effect=mock_load):
+    with patch("app.engines.runner.load_candles", side_effect=mock_load):
         run = run_scanner(db_session, timeframe="1h")
     
     assert eth.symbol in [db_session.get(Asset, r.asset_id).symbol for r in db_session.query(ScannerResult).filter_by(scanner_run_id=run.id).all()]
