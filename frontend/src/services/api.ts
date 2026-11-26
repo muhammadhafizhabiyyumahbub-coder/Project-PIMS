@@ -22,6 +22,19 @@ import type {
   SnapshotCreated,
   Transaction,
   Valuation,
+  CorrelationResponse,
+  BacktestRequest,
+  BacktestResponse,
+  FactorRequest,
+  FactorResponse,
+  AttributionRequest,
+  AttributionResponse,
+  ScenarioRequest,
+  ScenarioResponse,
+  FundamentalRequest,
+  FundamentalResponse,
+  SentimentRequest,
+  SentimentResponse,
 } from "@/types/api";
 
 export class ApiRequestError extends Error {
@@ -277,6 +290,72 @@ export function getAnalyticsRun(
   return request<AnalyticsRunDetail>(
     `/api/v1/portfolios/${encodeURIComponent(portfolioId)}/analytics/runs/${encodeURIComponent(runId)}`,
   );
+}
+
+// --- M4 Analytics Engines ----------------------------------------------------
+
+export function getCorrelation(params: {
+  portfolio_id: string;
+  timeframe?: string;
+  return_method?: string;
+  rolling_window?: number;
+  limit?: number;
+}): Promise<Envelope<CorrelationResponse>> {
+  const query = new URLSearchParams();
+  query.set("portfolio_id", params.portfolio_id);
+  if (params.timeframe) query.set("timeframe", params.timeframe);
+  if (params.return_method) query.set("return_method", params.return_method);
+  if (params.rolling_window !== undefined) query.set("rolling_window", params.rolling_window.toString());
+  if (params.limit !== undefined) query.set("limit", params.limit.toString());
+  return request<CorrelationResponse>(`/api/v1/analytics/correlation?${query.toString()}`);
+}
+
+export function runBacktest(body: BacktestRequest): Promise<Envelope<BacktestResponse>> {
+  return request<BacktestResponse>(`/api/v1/analytics/backtest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function runFactor(body: FactorRequest): Promise<Envelope<FactorResponse>> {
+  return request<FactorResponse>(`/api/v1/analytics/factor`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function runAttribution(body: AttributionRequest): Promise<Envelope<AttributionResponse>> {
+  return request<AttributionResponse>(`/api/v1/analytics/attribution`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function runScenario(body: ScenarioRequest): Promise<Envelope<ScenarioResponse>> {
+  return request<ScenarioResponse>(`/api/v1/analytics/scenario`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function runFundamental(body: FundamentalRequest): Promise<Envelope<FundamentalResponse>> {
+  return request<FundamentalResponse>(`/api/v1/analytics/fundamental`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function runSentiment(body: SentimentRequest): Promise<Envelope<SentimentResponse>> {
+  return request<SentimentResponse>(`/api/v1/analytics/sentiment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 export type { Candle, CandlesResponse, Opportunity, ResearchJob, ResearchReport, ScannerRunSummary };

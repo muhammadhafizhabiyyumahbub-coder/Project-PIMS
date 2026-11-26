@@ -364,22 +364,6 @@ export interface PortfolioRisk {
 // the backend's precision; a null metric is UNAVAILABLE and is shown as such,
 // never as 0. results length and window/period come from input_metadata.
 
-export type AnalyticsType = "performance" | "risk" | "allocation";
-
-export interface AnalyticsRun {
-  id: string;
-  engine_type: string;
-  portfolio_id: string | null;
-  observation_start: string | null;
-  observation_end: string | null;
-  calculation_version: string;
-  execution_status: string;
-  started_at: string | null;
-  completed_at: string | null;
-  input_metadata: Record<string, unknown>;
-  error_message: string | null;
-}
-
 export interface StoredPerformanceResult {
   id: string;
   analytics_run_id: string;
@@ -421,10 +405,284 @@ export interface StoredAllocationResult {
   result_metadata: Record<string, unknown>;
 }
 
+export interface AnalyticsRun {
+  id: string;
+  engine_type: string;
+  portfolio_id: string | null;
+  observation_start: string | null;
+  observation_end: string | null;
+  calculation_version: string;
+  execution_status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  input_metadata: Record<string, unknown>;
+  error_message: string | null;
+}
+
+export type AnalyticsType = "performance" | "risk" | "allocation" | "correlation" | "backtest" | "factor" | "attribution" | "scenario" | "fundamental" | "sentiment";
+
+export interface CorrelationMatrixItem {
+  asset_a: string;
+  asset_b: string;
+  correlation: number | null;
+  observation_count: number;
+  rolling: number[] | null;
+  status: string;
+}
+
+export interface CorrelationResponse {
+  portfolio_id: string;
+  timeframe: string;
+  return_method: string;
+  calculation_status: string;
+  calculation_version: string;
+  correlation_matrix: CorrelationMatrixItem[];
+  pairs_computed: number;
+  series_used: number;
+  analytics_run_id: string;
+}
+
+export interface BacktestRequest {
+  symbols: string[];
+  strategy: "BUY_HOLD" | "STATIC_WEIGHT";
+  weights?: Record<string, number> | null;
+  timeframe: string;
+  limit: number;
+  rebalance_every?: number;
+  fee_bps?: number;
+  slippage_bps?: number;
+}
+
+export interface BacktestResponse {
+  run_id: string;
+  strategy: string;
+  calculation_status: string;
+  metrics: Record<string, any>;
+  walkforward: {
+    in_sample_periods: number;
+    out_of_sample_periods: number;
+  };
+  calculation_version: string;
+  observation_start: string;
+  observation_end: string;
+}
+
+export interface FactorRequest {
+  symbols: string[];
+  factors: string[];
+  normalization: "ZSCORE" | "RANK";
+  weighting: "EQUAL";
+  timeframe: string;
+  limit: number;
+}
+
+export interface FactorScoreItem {
+  raw: Record<string, number | null>;
+  z: Record<string, number | null>;
+  composite: number | null;
+}
+
+export interface FactorResponse {
+  run_id: string;
+  calculation_status: string;
+  strategy: string;
+  factors: string[];
+  normalization: string;
+  weighting: string;
+  universe_size: number;
+  assets_included: number;
+  excluded_assets: string[];
+  calculation_version: string;
+  scores: Record<string, FactorScoreItem>;
+}
+
+export interface AttributionRequest {
+  portfolio_id: string;
+  benchmark_asset_id?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  timeframe: string;
+}
+
+export interface AttributionBreakdownItem {
+  symbol: string;
+  contribution: string | null;
+  active_contribution: string | null;
+}
+
+export interface AttributionResponse {
+  run_id: string;
+  portfolio_id: string;
+  total_return: string | null;
+  active_return: string | null;
+  status: string;
+  breakdown: AttributionBreakdownItem[];
+}
+
+export interface ScenarioRequest {
+  portfolio_id: string;
+  scenario_type: "SENSITIVITY" | "HISTORICAL" | "HYPOTHETICAL";
+  asset_id?: string | null;
+  shock?: number | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  timeframe: string;
+  limit?: number;
+}
+
+export interface ScenarioAssetItem {
+  symbol: string;
+  shock: string | null;
+  impact: string | null;
+  correlated_impact: string | null;
+}
+
+export interface ScenarioResponse {
+  run_id: string;
+  portfolio_id: string;
+  scenario_type: string;
+  portfolio_impact: string | null;
+  per_asset: ScenarioAssetItem[];
+  status: string;
+}
+
+export interface FundamentalRequest {
+  symbols: string[];
+  timeframe: string;
+}
+
+export interface FundamentalAssetItem {
+  symbol: string;
+  pe: number | null;
+  roe: number | null;
+  revenue_growth: number | null;
+  composite_score: number | null;
+  rank: number | null;
+  status: string;
+  reason: string | null;
+}
+
+export interface FundamentalResponse {
+  run_id: string;
+  status: string;
+  per_asset: FundamentalAssetItem[];
+}
+
+export interface SentimentRequest {
+  symbols: string[];
+  timeframe: string;
+}
+
+export interface SentimentAssetItem {
+  symbol: string;
+  sentiment_score: number | null;
+  label: string;
+  confidence: number | null;
+  headline_count: number;
+  status: string;
+  reason?: string | null;
+}
+
+export interface SentimentResponse {
+  run_id: string;
+  status: string;
+  per_asset?: SentimentAssetItem[];
+}
+
+export interface StoredCorrelationResult {
+  id: string;
+  analytics_run_id: string;
+  asset_a_id: string;
+  asset_b_id: string;
+  correlation_value: number;
+  observation_count: number;
+  observation_period: string;
+  calculation_method: string;
+  result_metadata: Record<string, any>;
+}
+
+export interface StoredBacktestResult {
+  id: string;
+  analytics_run_id: string;
+  metric: string;
+  value: number | null;
+  detail: Record<string, any>;
+}
+
+export interface StoredFactorResult {
+  id: string;
+  analytics_run_id: string;
+  asset_id: string;
+  symbol: string;
+  raw_factors: Record<string, any>;
+  z_factors: Record<string, any>;
+  composite_score: number | null;
+  excluded: boolean;
+  result_metadata: Record<string, any>;
+}
+
+export interface StoredAttributionResult {
+  id: string;
+  analytics_run_id: string;
+  asset_id: string | null;
+  symbol: string;
+  contribution: number | null;
+  active_contribution: number | null;
+  result_metadata: Record<string, any>;
+}
+
+export interface StoredScenarioResult {
+  id: string;
+  analytics_run_id: string;
+  asset_id: string | null;
+  symbol: string | null;
+  scenario_type: string;
+  shock: number | null;
+  impact: number | null;
+  correlated_impact: number | null;
+  result_metadata: Record<string, any>;
+}
+
+export interface StoredFundamentalResult {
+  id: string;
+  analytics_run_id: string;
+  asset_id: string | null;
+  symbol: string;
+  pe: number | null;
+  roe: number | null;
+  revenue_growth: number | null;
+  composite_score: number | null;
+  rank: number | null;
+  result_metadata: Record<string, any>;
+}
+
+export interface StoredSentimentResult {
+  id: string;
+  analytics_run_id: string;
+  asset_id: string | null;
+  symbol: string;
+  sentiment_score: number | null;
+  label: string | null;
+  confidence: number | null;
+  headline_count: number | null;
+  result_metadata: Record<string, any>;
+}
+
 /** A stored analytics run plus its result rows (POST returns this too). */
 export interface AnalyticsRunDetail {
   run: AnalyticsRun;
-  results: Array<StoredPerformanceResult | StoredRiskResult | StoredAllocationResult>;
+  results: Array<
+    | StoredPerformanceResult
+    | StoredRiskResult
+    | StoredAllocationResult
+    | StoredCorrelationResult
+    | StoredBacktestResult
+    | StoredFactorResult
+    | StoredAttributionResult
+    | StoredScenarioResult
+    | StoredFundamentalResult
+    | StoredSentimentResult
+  >;
 }
 
 // --- Asset summary (api-spec §11) -------------------------------------------

@@ -612,7 +612,10 @@ def run_analytics_sentiment(
         db.rollback()
         return error_response("SERVER_ERROR", str(exc), 500)
 
-    return success_response({"run_id": result["run_id"], "status": "COMPLETED"})
+    return success_response({
+        "run_id": result["run_id"],
+        "status": result["status"],
+    })
 
 
 class FundamentalRequest(BaseModel):
