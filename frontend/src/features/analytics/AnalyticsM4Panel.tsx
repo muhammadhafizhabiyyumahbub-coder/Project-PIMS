@@ -1,5 +1,12 @@
 import React, { useState } from "react";
 import * as api from "@/services/api";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
+  CartesianGrid, Legend,
+} from "recharts";
+
+const BAR_COLORS = ["#2563eb", "#16a34a", "#ea580c", "#9333ea", "#0891b2", "#db2777", "#ca8a04", "#4b5563"];
+const num = (v: unknown): number | null => (typeof v === "number" ? v : (v != null && !isNaN(parseFloat(String(v))) ? parseFloat(String(v)) : null));
 
 type Engine =
   | "CORRELATION" | "BACKTEST" | "FACTOR"
@@ -141,40 +148,46 @@ export const AnalyticsM4Panel: React.FC<{ portfolioId: string }> = ({ portfolioI
             </div>
           )}
           {active === "FACTOR" && result.scores && (
-            <FactorTable scores={result.scores} />
+            <>
+              <BarChartCard title="Composite score per aset"
+                data={Object.entries(result.scores).map(([sym, it]) => ({ symbol: sym, composite: num(it.composite) }))}
+                xKey="symbol" yKeys={["composite"]} />
+              <FactorTable scores={result.scores} />
+            </>
           )}
           {active === "ATTRIBUTION" && result.breakdown && (
             <>
               <div className="text-sm mb-2">Total return: <b>{result.total_return}</b></div>
-              <Table rows={result.breakdown as unknown as Array<Record<string, number | string | null | undefined>>} cols={["symbol", "contribution", "active"]}
-                render={(row) => [row.symbol, row.contribution, row.active_contribution]} />
+              <BarChartCard title="Kontribusi per aset"
+                data={result.breakdown.map((r) => ({ symbol: r.symbol, contribution: num(r.contribution) }))}
+                xKey="symbol" yKeys={["contribution"]} />
             </>
           )}
           {active === "SCENARIO" && result.per_asset && (
             <>
               <div className="text-sm mb-2">Portfolio impact: <b>{result.portfolio_impact}</b></div>
-              <Table rows={result.per_asset} cols={["symbol", "shock", "impact", "correlated"]}
-                render={(row) => [row.symbol, row.shock, row.impact, row.correlated_impact]} />
+              <BarChartCard title="Impact per aset"
+                data={result.per_asset.map((r) => ({ symbol: String(r.symbol), impact: num(r.impact) }))}
+                xKey="symbol" yKeys={["impact"]} />
             </>
           )}
           {active === "FUNDAMENTAL" && result.per_asset && (
-            <Table rows={result.per_asset} cols={["symbol", "pe", "roe", "rev_growth", "score", "rank", "status"]}
-              render={(row) => [row.symbol, row.pe, row.roe, row.revenue_growth, row.composite_score, row.rank, row.status]} />
+            <BarChartCard title="Composite score per aset"
+              data={result.per_asset.map((r) => ({ symbol: String(r.symbol), composite_score: num(r.composite_score) }))}
+              xKey="symbol" yKeys={["composite_score"]} />
           )}
           {active === "SENTIMENT" && result.per_asset && (
-            <Table rows={result.per_asset} cols={["symbol", "score", "label", "confidence", "headlines", "status"]}
-              render={(row) => [row.symbol, row.sentiment_score, row.label, row.confidence, row.headline_count, row.status]} />
+            <BarChartCard title="Sentiment score per aset"
+              data={result.per_asset.map((r) => ({ symbol: String(r.symbol), sentiment_score: num(r.sentiment_score) }))}
+              xKey="symbol" yKeys={["sentiment_score"]} />
           )}
           {active === "CORRELATION" && result.correlation_matrix && (
-            <Table rows={result.correlation_matrix as unknown as Array<Record<string, number | string | null | undefined>>} cols={["asset", "corr"]}
-              render={(row) => [row.asset ?? row.symbol, row.correlation]} />
+            <BarChartCard title="Korelasi per pasangan aset"
+              data={result.correlation_matrix.map((r) => ({ symbol: String(r.asset ?? r.symbol), correlation: num(r.correlation) }))}
+              xKey="symbol" yKeys={["correlation"]} />
           )}
           {active === "BACKTEST" && result.metrics && (
-            <div className="text-sm space-y-1">
-              {Object.entries(result.metrics).map(([k, v]) => (
-                <div key={k} className="flex justify-between"><span>{k}</span><b>{typeof v === "number" ? v.toFixed(6) : JSON.stringify(v)}</b></div>
-              ))}
-            </div>
+            <BacktestMetrics metrics={result.metrics} />
           )}
           {!(
             (active === "FACTOR" && result.scores) ||
@@ -193,26 +206,6 @@ export const AnalyticsM4Panel: React.FC<{ portfolioId: string }> = ({ portfolioI
   );
 };
 
-function Table({ rows, cols, render }: {
-  rows: Array<Record<string, number | string | null | undefined>>;
-  cols: string[];
-  render: (row: Record<string, number | string | null | undefined>, i?: number) => (number | string | null | undefined)[];
-}) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs border-collapse">
-        <thead><tr>{cols.map((c) => <th key={c} className="border p-1.5 text-left bg-gray-50">{c}</th>)}</tr></thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>{render(row, i).map((cell, j) => (
-              <td key={j} className="border p-1.5">{cell == null ? <span className="text-gray-400">—</span> : cell}</td>
-            ))}</tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 function FactorTable({ scores }: { scores: M4Result["scores"] }) {
   const entries = Object.entries(scores ?? {});
   const cols = ["symbol", "MOMENTUM", "VOLATILITY", "REVERSAL", "SIZE", "composite"];
@@ -235,5 +228,35 @@ function FactorTable({ scores }: { scores: M4Result["scores"] }) {
       </table>
     </div>
   );
+}
+function BarChartCard({ title, data, xKey, yKeys, height = 240 }: {
+  title: string;
+  data: Array<Record<string, unknown>>;
+  xKey: string;
+  yKeys: string[];
+  height?: number;
+}) {
+  return (
+    <div className="mb-3">
+      <div className="text-xs font-semibold text-gray-600 mb-1">{title}</div>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey={xKey} tick={{ fontSize: 11 }} interval={0} />
+          <YAxis tick={{ fontSize: 11 }} width={56} tickFormatter={(v) => (typeof v === "number" ? (Math.abs(v) < 1 ? v.toFixed(3) : v.toFixed(2)) : String(v))} />
+          <Tooltip formatter={(v) => [typeof v === "number" ? v.toFixed(5) : String(v)]} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {yKeys.map((k, i) => (
+            <Bar key={k} dataKey={k} fill={BAR_COLORS[i % BAR_COLORS.length]} radius={[2, 2, 0, 0]} />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+function BacktestMetrics({ metrics }: { metrics: Record<string, number | string | null> }) {
+  const yKeys = Object.keys(metrics).filter((k) => typeof metrics[k] === "number");
+  const data = [{ name: "metrik", ...metrics }];
+  return <BarChartCard title="Metrik backtest" data={data} xKey="name" yKeys={yKeys} />;
 }
 export default AnalyticsM4Panel;
