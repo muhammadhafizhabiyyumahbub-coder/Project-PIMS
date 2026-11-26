@@ -5,6 +5,20 @@ type Engine =
   | "CORRELATION" | "BACKTEST" | "FACTOR"
   | "ATTRIBUTION" | "SCENARIO" | "FUNDAMENTAL" | "SENTIMENT";
 
+// Generic shape of M4 engine responses (varies by engine; typed loosely).
+type M4Result = {
+  status?: string;
+  calculation_status?: string;
+  total_return?: number;
+  metrics?: Record<string, number>;
+  scores?: Record<string, { composite?: number; raw?: Record<string, number> }>;
+  breakdown?: Array<{ symbol: string; contribution?: number; active_contribution?: number }>;
+  per_asset?: Array<Record<string, number | string | null | undefined>>;
+  portfolio_impact?: number;
+  correlation_matrix?: Array<{ asset?: string; symbol?: string; correlation?: number }>;
+  [k: string]: unknown;
+};
+
 const ENGINES: { id: Engine; label: string }[] = [
   { id: "CORRELATION", label: "Correlation" },
   { id: "BACKTEST", label: "Backtest" },
@@ -22,7 +36,7 @@ export const AnalyticsM4Panel: React.FC<{ portfolioId: string }> = ({ portfolioI
   const [limit, setLimit] = useState(300);
   const [scenarioType, setScenarioType] = useState<"SENSITIVITY" | "HISTORICAL">("HISTORICAL");
   const [shock, setShock] = useState("-0.1");
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<M4Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -31,6 +45,7 @@ export const AnalyticsM4Panel: React.FC<{ portfolioId: string }> = ({ portfolioI
   async function run() {
     setLoading(true); setError(null); setResult(null);
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let data: any;
       switch (active) {
         case "CORRELATION":
@@ -49,9 +64,14 @@ export const AnalyticsM4Panel: React.FC<{ portfolioId: string }> = ({ portfolioI
           data = (await api.runSentiment({ symbols: symList, timeframe })).data; break;
       }
       setResult(data);
-    } catch (e: any) {
-      const code = e?.data?.error?.code || e?.error?.code;
-      const msg = e?.data?.error?.message || e?.message || "Unknown error";
+    } catch (e) {
+      const err = e as {
+        data?: { error?: { code?: string; message?: string } };
+        error?: { code?: string; message?: string };
+        message?: string;
+      };
+      const code = err?.data?.error?.code || err?.error?.code;
+      const msg = err?.data?.error?.message || err?.message || "Unknown error";
       setError(code ? `[${code}] ${msg}` : msg);
     } finally {
       setLoading(false);
@@ -85,7 +105,7 @@ export const AnalyticsM4Panel: React.FC<{ portfolioId: string }> = ({ portfolioI
         )}
         {active === "SCENARIO" && (
           <label>Type
-            <select value={scenarioType} onChange={(e) => setScenarioType(e.target.value as any)} className="w-full border rounded p-1.5 mt-1">
+            <select value={scenarioType} onChange={(e) => setScenarioType(e.target.value as "SENSITIVITY" | "HISTORICAL")} className="w-full border rounded p-1.5 mt-1">
               <option value="HISTORICAL">Historical</option>
               <option value="SENSITIVITY">Sensitivity</option>
             </select>
@@ -121,14 +141,12 @@ export const AnalyticsM4Panel: React.FC<{ portfolioId: string }> = ({ portfolioI
             </div>
           )}
           {active === "FACTOR" && result.scores && (
-            <Table rows={(Object.entries(result.scores) as [string, any][]).map(([k, v]) => ({ key: k, item: v }))}
-              cols={["symbol", "MOMENTUM", "VOLATILITY", "REVERSAL", "SIZE", "composite"]}
-              render={(row) => [row.key, row.item.raw?.MOMENTUM, row.item.raw?.VOLATILITY, row.item.raw?.REVERSAL, row.item.raw?.SIZE, row.item.composite]} />
+            <FactorTable scores={result.scores} />
           )}
           {active === "ATTRIBUTION" && result.breakdown && (
             <>
               <div className="text-sm mb-2">Total return: <b>{result.total_return}</b></div>
-              <Table rows={result.breakdown} cols={["symbol", "contribution", "active"]}
+              <Table rows={result.breakdown as unknown as Array<Record<string, number | string | null | undefined>>} cols={["symbol", "contribution", "active"]}
                 render={(row) => [row.symbol, row.contribution, row.active_contribution]} />
             </>
           )}
@@ -148,7 +166,7 @@ export const AnalyticsM4Panel: React.FC<{ portfolioId: string }> = ({ portfolioI
               render={(row) => [row.symbol, row.sentiment_score, row.label, row.confidence, row.headline_count, row.status]} />
           )}
           {active === "CORRELATION" && result.correlation_matrix && (
-            <Table rows={result.correlation_matrix} cols={["asset", "corr"]}
+            <Table rows={result.correlation_matrix as unknown as Array<Record<string, number | string | null | undefined>>} cols={["asset", "corr"]}
               render={(row) => [row.asset ?? row.symbol, row.correlation]} />
           )}
           {active === "BACKTEST" && result.metrics && (
@@ -176,7 +194,9 @@ export const AnalyticsM4Panel: React.FC<{ portfolioId: string }> = ({ portfolioI
 };
 
 function Table({ rows, cols, render }: {
-  rows: any[]; cols: string[]; render: (row: any, i?: number) => any[];
+  rows: Array<Record<string, number | string | null | undefined>>;
+  cols: string[];
+  render: (row: Record<string, number | string | null | undefined>, i?: number) => (number | string | null | undefined)[];
 }) {
   return (
     <div className="overflow-x-auto">
@@ -187,6 +207,29 @@ function Table({ rows, cols, render }: {
             <tr key={i}>{render(row, i).map((cell, j) => (
               <td key={j} className="border p-1.5">{cell == null ? <span className="text-gray-400">—</span> : cell}</td>
             ))}</tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function FactorTable({ scores }: { scores: M4Result["scores"] }) {
+  const entries = Object.entries(scores ?? {});
+  const cols = ["symbol", "MOMENTUM", "VOLATILITY", "REVERSAL", "SIZE", "composite"];
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs border-collapse">
+        <thead><tr>{cols.map((c) => <th key={c} className="border p-1.5 text-left bg-gray-50">{c}</th>)}</tr></thead>
+        <tbody>
+          {entries.map(([sym, item]) => (
+            <tr key={sym}>
+              <td className="border p-1.5">{sym}</td>
+              <td className="border p-1.5">{item.raw?.MOMENTUM ?? "—"}</td>
+              <td className="border p-1.5">{item.raw?.VOLATILITY ?? "—"}</td>
+              <td className="border p-1.5">{item.raw?.REVERSAL ?? "—"}</td>
+              <td className="border p-1.5">{item.raw?.SIZE ?? "—"}</td>
+              <td className="border p-1.5">{item.composite ?? "—"}</td>
+            </tr>
           ))}
         </tbody>
       </table>

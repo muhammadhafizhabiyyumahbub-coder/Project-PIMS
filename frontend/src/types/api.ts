@@ -457,7 +457,7 @@ export interface BacktestResponse {
   run_id: string;
   strategy: string;
   calculation_status: string;
-  metrics: Record<string, any>;
+  metrics: Record<string, number | string | null>;
   walkforward: {
     in_sample_periods: number;
     out_of_sample_periods: number;
@@ -598,7 +598,7 @@ export interface StoredCorrelationResult {
   observation_count: number;
   observation_period: string;
   calculation_method: string;
-  result_metadata: Record<string, any>;
+  result_metadata: Record<string, unknown>;
 }
 
 export interface StoredBacktestResult {
@@ -606,7 +606,7 @@ export interface StoredBacktestResult {
   analytics_run_id: string;
   metric: string;
   value: number | null;
-  detail: Record<string, any>;
+  detail: Record<string, unknown>;
 }
 
 export interface StoredFactorResult {
@@ -614,11 +614,11 @@ export interface StoredFactorResult {
   analytics_run_id: string;
   asset_id: string;
   symbol: string;
-  raw_factors: Record<string, any>;
-  z_factors: Record<string, any>;
+  raw_factors: Record<string, unknown>;
+  z_factors: Record<string, unknown>;
   composite_score: number | null;
   excluded: boolean;
-  result_metadata: Record<string, any>;
+  result_metadata: Record<string, unknown>;
 }
 
 export interface StoredAttributionResult {
@@ -628,7 +628,7 @@ export interface StoredAttributionResult {
   symbol: string;
   contribution: number | null;
   active_contribution: number | null;
-  result_metadata: Record<string, any>;
+  result_metadata: Record<string, unknown>;
 }
 
 export interface StoredScenarioResult {
@@ -640,7 +640,7 @@ export interface StoredScenarioResult {
   shock: number | null;
   impact: number | null;
   correlated_impact: number | null;
-  result_metadata: Record<string, any>;
+  result_metadata: Record<string, unknown>;
 }
 
 export interface StoredFundamentalResult {
@@ -653,7 +653,7 @@ export interface StoredFundamentalResult {
   revenue_growth: number | null;
   composite_score: number | null;
   rank: number | null;
-  result_metadata: Record<string, any>;
+  result_metadata: Record<string, unknown>;
 }
 
 export interface StoredSentimentResult {
@@ -665,7 +665,7 @@ export interface StoredSentimentResult {
   label: string | null;
   confidence: number | null;
   headline_count: number | null;
-  result_metadata: Record<string, any>;
+  result_metadata: Record<string, unknown>;
 }
 
 /** A stored analytics run plus its result rows (POST returns this too). */
