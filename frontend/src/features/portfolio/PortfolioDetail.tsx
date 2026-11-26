@@ -12,6 +12,7 @@ import PerformancePanel, { startFor, type PeriodKey } from "./PerformancePanel";
 import AllocationPanel from "./AllocationPanel";
 import RiskPanel from "./RiskPanel";
 import StoredAnalytics from "./StoredAnalytics";
+import AnalyticsM4Panel from "@/features/analytics/AnalyticsM4Panel";
 
 const TRANSACTION_TYPES = ["DEPOSIT", "WITHDRAWAL", "BUY", "SELL"] as const;
 const ASSET_TYPES: readonly string[] = ["BUY", "SELL"];
@@ -114,6 +115,7 @@ export default function PortfolioDetail({ portfolioId }: { portfolioId: string }
       <RiskPanel portfolioId={portfolioId} windowDays={riskWindowDays} onWindowChange={setRiskWindowDays} />
       <AllocationPanel portfolioId={portfolioId} />
       <StoredAnalytics portfolioId={portfolioId} performanceStart={startFor(performancePeriod)} riskWindowDays={riskWindowDays} />
+      <AnalyticsM4Panel portfolioId={portfolioId} />
       <SnapshotHistory portfolioId={portfolioId} />
       <HoldingsTable holdings={holdings} statusReason={STATUS_REASONS[valuation.valuation_status]} />
       <TransactionForm portfolioId={portfolioId} currency={portfolio.base_currency} onRecorded={() => setReloadKey((k) => k + 1)} />
