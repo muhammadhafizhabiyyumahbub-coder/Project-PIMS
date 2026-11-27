@@ -1,7 +1,7 @@
 # PIMS V1 — Release Notes
 
 **Status:** Release Candidate — **belum dirilis**.
-**Tanggal terakhir update:** 25 November 2026 (M4 analytics engine: 6/7 engine).
+**Tanggal terakhir update:** 26 November 2026 (M4 analytics: 7/7 engine + UI + live-verify).
 
 Dokumen ini merangkum fitur yang benar-benar ada pada kode saat ini, apa yang
 belum ada, dan catatan schema/migration. Tidak ada klaim bahwa V1 sudah selesai
@@ -9,9 +9,9 @@ atau sudah dirilis.
 
 ---
 
-## 0. Update 25 Nov 2026 — M4 Analytics Engine (6/7)
+## 0. Update 26 Nov 2026 — M4 Analytics: 7/7 engine + UI + live-verify
 
-Enam engine analisis portfolio (Milestone M4) **SELESAI + CI hijau**:
+Tujuh engine analisis portfolio (Milestone M4) **SELESAI + CI hijau + live-verified**:
 
 | Engine | Endpoint | Status | Bukti |
 |---|---|---|---|
@@ -21,24 +21,34 @@ Enam engine analisis portfolio (Milestone M4) **SELESAI + CI hijau**:
 | Attribution Phase 1 | `POST /analytics/attribution` | ✅ | 9/9 test, CI #54 |
 | Scenario Phase 1 | `POST /analytics/scenario` | ✅ | 6/6 test, CI #55 |
 | Fundamental Phase 1 | `POST /analytics/fundamental` | ✅ | 8/8 test, CI #59/#60 |
-| Sentiment Phase 1 | `POST /analytics/sentiment` | ✅ (honest-UNAVAILABLE tanpa RSS) | 10/10 test, CI #62 |
+| Sentiment Phase 1b | `POST /analytics/sentiment` | ✅ (RSS + LLM agnes) | 10/10 test, CI #62 |
 
+- **Live-verify data asli (26 Nov 2026, DB `pims` + 3 aset crypto):** 7/7 engine
+  `COMPLETED` — correlation (matrix BTC/ETH/SOL), backtest (BUY_HOLD, metrics),
+  factor (4 factor composite), attribution (total_return -0.114), scenario
+  (portfolio_impact -0.114), fundamental (UNAVAILABLE jujur utk crypto, tak ada
+  P/E), sentiment (RSS+LLM skor). 3 bug nyata ketemu + diperbaiki (commit `c1f597d`):
+  fundamental hollow-mock → fetch Yahoo nyata; backtest `candle_status` key mismatch;
+  backtest numeric overflow.
+- **UI Analytics M4 (commit `0811f6f` + `12018d9`):** panel di `PortfolioDetail`,
+  7 engine, portfolio-scoped, **recharts bar chart** per engine + tabel detail,
+  UNAVAILABLE/INSUFFICIENT_DATA informatif. Lint + build + CI hijau.
 - Semua engine **deterministik**, tanpa network di test (mock transport), tanpa ubah
   `.env`/credential.
 - **UNAVAILABLE / INSUFFICIENT_DATA / INVALID_CONFIG** honest: data tak ada →
-  bukan 0/skor acak (mis. fundamental tak ada P/E → UNAVAILABLE + reason;
-  sentiment Phase 1 belum wire RSS → UNAVAILABLE "no news source wired").
+  bukan 0/skor acak.
 - **Scenario hypothetical + Backtesting rule-based = GATED §26** (owner; belum implement).
 - **Macro engine (M4 #6) = TUNDA** — butuh FRED API key (owner).
 - Migration chain (head tunggal `d6e7f8a9b0c1`):
   `8f3a2d91 → 5c7e2a90 (backtest) → 9b4f1c6e (factor) → a1b2c3d4 (attribution) →
   b3c4d5e6 (scenario) → c5d6e7f8 (fundamental) → d6e7f8a9b0 (sentiment)`.
-- Full regression suite: **331+ passed, 0 failed** (deselect LLM+ingestion).
+- Full regression suite: **347+ passed, 0 failed** (deselect LLM+ingestion).
 
 **Berikutnya menuju final release:**
-1. RSS adapter (Sentiment Phase 1b) — upgrade UNAVAILABLE → fungsional (gratuit, tanpa key).
+1. ~~RSS adapter (Sentiment Phase 1b)~~ **SELESAI** — RSS + LLM agnes, CI #62.
 2. Macro engine — butuh FRED API key (owner).
-3. Smoke-test live API + tag `v1.0` + push.
+3. Docker dev env — butuh admin + reboot WSL2/VT-x (owner; ditunda akhir).
+4. Smoke-test live API (sudah, live-verify 26 Nov) + tag `v1.0` (sudah di-push).
 
 ---
 
