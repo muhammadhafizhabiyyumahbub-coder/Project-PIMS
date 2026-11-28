@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.database.models import Asset, AnalyticsRun, BacktestMetrics
 from app.engines.runner import load_candles
+from app.engines.correlation.engine import _bucket
 
 CALC_VERSION = "backtest.phase1.v1"
 
@@ -57,6 +58,38 @@ def _per_period_equity(curve: list[float]) -> list[float]:
         prev = curve[i - 1]
         rets.append((curve[i] - prev) / prev if prev else 0.0)
     return rets
+
+
+def _aligned_closes(series_map: dict, timeframe: str) -> list[list[float]]:
+    """Time-align every asset's closes onto the common set of candle buckets.
+
+    Multi-asset backtests must not mix prices from different periods: each
+    asset's candles are bucketed (spec §6, shared with the correlation engine)
+    and indexed by bucket so that index t is the *same* period for every asset.
+    Returns a list (one per asset, in `series_map` order) of closes aligned to
+    the common buckets; a None marks a missing close for that bucket.
+    """
+    # bucket -> {sym: close} (last candle in a bucket wins)
+    buckets: dict = {}
+    for sym, s in series_map.items():
+        for i, ts in enumerate(s.close_times):
+            b = _bucket(ts, timeframe)
+            if b is None:
+                continue
+            buckets.setdefault(b, {})[sym] = s.closes[i]
+    common = sorted(b for b, m in buckets.items() if len(m) == len(series_map))
+    if len(common) < 2:
+        raise InsufficientData(
+            "fewer than 2 common candle buckets across assets (time-align)"
+        )
+    aligned: list[list[float]] = []
+    for sym in series_map:
+        row: list[float] = []
+        for b in common:
+            v = buckets[b].get(sym)
+            row.append(float(v))
+        aligned.append(row)
+    return aligned
 
 
 def _simple_returns(closes: list[float]) -> list[float]:
@@ -144,11 +177,14 @@ def compute_static_weight(
     rebalance_every: int,
     fee_bps: float = DEFAULT_FEE_BPS,
     slippage_bps: float = DEFAULT_SLIPPAGE_BPS,
+    timeframe: str = "1d",
 ) -> dict:
     """Rebalance the basket to target weights every `rebalance_every` periods.
 
-    Single source of truth for the equity curve: `equity_curve_series`.
-    Costs accrue on turnover at each scheduled rebalance.
+    Assets are time-aligned onto common candle buckets before the equity curve
+    is computed (see `_aligned_closes`), so index t is the same period for
+    every asset. Single source of truth for the equity curve:
+    `equity_curve_series`. Costs accrue on turnover at each scheduled rebalance.
     """
     if not weights:
         raise InsufficientData("no weights supplied")
@@ -162,17 +198,21 @@ def compute_static_weight(
         raise InsufficientData("weights sum to zero")
     target = {k: v / total_w for k, v in weights.items()}
 
-    min_len = min(len(s.closes) for s in series_map.values())
+    # Time-align every asset onto the common buckets.
+    sub = {k: series_map[k] for k in target}
+    aligned = _aligned_closes(sub, timeframe)  # aligned[i] = closes of the i-th target asset
+    aligned_by_sym = {k: aligned[i] for i, k in enumerate(target)}
+    min_len = min(len(v) for v in aligned_by_sym.values())
     if min_len < 2:
-        raise InsufficientData("need >= 2 common periods")
+        raise InsufficientData("need >= 2 common aligned periods")
 
-    curve = equity_curve_series(series_map, target, min_len, rebalance_every,
+    curve = equity_curve_series(aligned_by_sym, target, min_len, rebalance_every,
                                 fee_bps, slippage_bps)
     per_period = _per_period_equity(curve)
     n_periods = len(per_period)
 
     # aggregate turnover/cost across all rebalances (recompute for the report)
-    total_turnover, total_cost = _aggregate_costs(series_map, target, min_len,
+    total_turnover, total_cost = _aggregate_costs(aligned_by_sym, target, min_len,
                                                    rebalance_every, fee_bps, slippage_bps)
 
     vol, sharpe, max_dd = _risk_metrics(per_period, n_periods)
@@ -202,10 +242,11 @@ def compute_static_weight(
     }
 
 
-def _aggregate_costs(series_map, target, min_len, rebalance_every, fee_bps, slippage_bps):
-    """Sum turnover + cost across every scheduled rebalance (report only)."""
+def _aggregate_costs(closes_map: dict, target, min_len, rebalance_every, fee_bps, slippage_bps):
+    """Sum turnover + cost across every scheduled rebalance (report only).
+
+    `closes_map[sym]` is a list of time-aligned closes (index = period)."""
     cost_rate = (fee_bps + slippage_bps) / 10_000.0
-    curve = [1.0]
     holdings = {sym: target[sym] for sym in target}
     last_rebalance = 0
     total_turnover = 0.0
@@ -213,9 +254,9 @@ def _aggregate_costs(series_map, target, min_len, rebalance_every, fee_bps, slip
     for t in range(1, min_len):
         total = 0.0
         for sym, w in holdings.items():
-            s = series_map[sym]
-            prev = s.closes[t - 1]
-            holdings[sym] = w * ((s.closes[t] - prev) / prev if prev else 1.0)
+            closes = closes_map[sym]
+            prev = closes[t - 1]
+            holdings[sym] = w * ((closes[t] / prev) if prev else 1.0)
             total += holdings[sym]
         if t - last_rebalance >= rebalance_every:
             turnover = sum(
@@ -226,41 +267,42 @@ def _aggregate_costs(series_map, target, min_len, rebalance_every, fee_bps, slip
             total_cost += cost
             total_turnover += turnover
             last_rebalance = t
-            holdings = {sym: target[sym] for sym in target}
-        curve.append(total)
+            holdings = {sym: target[sym] * total for sym in target}
     return total_turnover, total_cost
 
 
-def equity_curve_series(series_map, target, min_len, rebalance_every, fee_bps, slippage_bps):
+def equity_curve_series(closes_map: dict, target, min_len, rebalance_every, fee_bps, slippage_bps):
     """Exact equity curve (net of rebalance costs) for risk metrics.
 
-    Recomputed cleanly (the inline loop in compute_static_weight is replaced
-    by this single source of truth to avoid double-booking costs).
+    `closes_map[sym]` is a list of time-aligned closes (index = period).
+    `holdings` tracks the *value* of each asset (in equity units), not its
+    weight. At a rebalance the basket is re-priced to `target` weights of the
+    current total equity (costs already deducted).
     """
     cost_rate = (fee_bps + slippage_bps) / 10_000.0
+    # start: total equity = 1.0, split into target weights
+    holdings = {sym: target[sym] for sym in target}  # value per asset, sum=1
     curve = [1.0]
     last_rebalance = 0
-    # track current holdings value per asset (in equity units)
-    holdings = {sym: target[sym] for sym in target}
     for t in range(1, min_len):
         total = 0.0
         for sym, w in holdings.items():
-            s = series_map[sym]
-            prev = s.closes[t - 1]
-            period_mult = (s.closes[t] - prev) / prev if prev else 1.0
+            closes = closes_map[sym]
+            prev = closes[t - 1]
+            period_mult = (closes[t] / prev) if prev else 1.0
             holdings[sym] = w * period_mult
             total += holdings[sym]
         if t - last_rebalance >= rebalance_every:
             turnover = sum(
-                abs(target[sym] - holdings[sym] / total if total else 0.0)
+                abs(target[sym] - (holdings[sym] / total if total else 0.0))
                 for sym in target
             )
             cost = turnover * cost_rate * total
             total = total - cost
-            # renormalize holdings to target after charging cost
-            scale = 1.0
+            # renormalize: re-price each asset to its target weight of the
+            # post-cost total equity.
             for sym in target:
-                holdings[sym] = target[sym]
+                holdings[sym] = target[sym] * total
             last_rebalance = t
         curve.append(total)
     return curve
@@ -392,13 +434,13 @@ def run_backtest_for_assets(
             # multiple assets with BUY_HOLD -> treat as static equal weight
             eq_w = {sym: 1.0 / len(series_map) for sym in series_map}
             raw = compute_static_weight(series_map, eq_w, rebalance_every,
-                                        fee_bps, slippage_bps)
+                                        fee_bps, slippage_bps, timeframe)
     elif strategy == "STATIC_WEIGHT":
         missing = [k for k in weights if k not in series_map]
         if missing:
             raise InsufficientData(f"weights reference unknown symbols: {missing}")
         raw = compute_static_weight(series_map, weights, rebalance_every,
-                                    fee_bps, slippage_bps)
+                                    fee_bps, slippage_bps, timeframe)
     else:
         raise ValueError(f"unsupported strategy {strategy!r}")
 

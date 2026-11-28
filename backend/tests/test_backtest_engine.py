@@ -92,6 +92,41 @@ def test_static_weight_unknown_symbol_raises():
         compute_static_weight({"A": a}, {"B": 1.0}, rebalance_every=1)
 
 
+def test_static_weight_multiasst_1h_no_equity_collapse():
+    """Regression: multi-asset 1h candles whose per-asset close timestamps
+    differ (e.g. A at 09:00, B at 07:00) must still produce a sane equity
+    curve. Before the fix, the period-growth multiplier was computed as the
+    raw return (not 1+return) and assets were not time-aligned, so the
+    equity curve collapsed to ~0 and `total_return` pinned at -1.0 with
+    volatility exploding (observed 5e57 on real data). Now the static path
+    time-aligns onto common candle buckets and uses cur/prev growth factor,
+    so a gently declining multi-asset window yields a modest negative
+    return (not -1.0) and a bounded volatility.
+    """
+    base = datetime(2026, 11, 17, 0, 0, tzinfo=timezone.utc)
+
+    def hourly(closes, offset_h=0):
+        ts = [base + timedelta(hours=offset_h + i) for i in range(len(closes))]
+        return Series(symbol="s", asset_id="x", closes=list(closes), close_times=ts)
+
+    # ~3 gently declining 1h series (BTC/ETH/SOL-like), timestamps offset so
+    # raw index t is NOT the same period for every asset.
+    a = hourly([100.0, 99.0, 99.5, 98.5, 99.0, 98.0, 97.0], offset_h=0)
+    b = hourly([50.0, 49.5, 49.8, 49.0, 49.5, 48.8, 48.0], offset_h=1)
+    c = hourly([10.0, 9.9, 9.95, 9.85, 9.9, 9.8, 9.7], offset_h=2)
+    r = compute_static_weight({"A": a, "B": b, "C": c},
+                             {"A": 1/3, "B": 1/3, "C": 1/3},
+                             rebalance_every=21, fee_bps=10.0, slippage_bps=5.0,
+                             timeframe="1h")
+    # equity must not have collapsed: a modest loss, not a total wipeout
+    assert -0.5 < r["total_return"] < 0.0
+    # annualized volatility bounded (not 1e50+ overflow)
+    assert r["volatility"] is not None
+    assert abs(r["volatility"]) < 50.0
+    # max drawdown is a fraction of equity (0..1), not >1
+    assert 0.0 <= r["max_drawdown"] <= 1.0
+
+
 # ---------------------------------------------------------------------------
 # Endpoint + persistence (DB)
 # ---------------------------------------------------------------------------
