@@ -9,16 +9,19 @@ empty list so the engine reports UNAVAILABLE (never fabricates a 0).
 License: FRED data is public-domain-ish (US government series); attribution per
 https://fred.stlouisfed.org/legal/.
 """
+import logging
 from typing import Optional
 
 import httpx
 
 from app.config.settings import get_settings
 
+logger = logging.getLogger(__name__)
+
 # Logical key -> FRED series id.
 SERIES_MAP = {
     "CPI": "CPIAUCSL",   # CPI All Urban Consumers (monthly)
-    "GDP": "GDPA",       # Gross Domestic Product (annual)
+    "GDP": "GDPC1",      # Real GDP, chained 2017 USD (quarterly) — spec series
     "UNRATE": "UNRATE",  # Unemployment rate (monthly)
     "FEDFUNDS": "FEDFUNDS",  # Effective federal funds rate (monthly)
     "DFF": "DFF",        # Federal funds effective rate (daily)
@@ -59,7 +62,9 @@ class FREDAdapter:
             with httpx.Client(transport=self.transport, timeout=self.timeout) as client:
                 resp = client.get(f"{self.base_url}/fred/series/observations", params=params)
                 resp.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            # Surface transient failures instead of silently returning empty.
+            logger.warning("FRED fetch failed for %s: %s", series_id, exc)
             return []
 
         out = []

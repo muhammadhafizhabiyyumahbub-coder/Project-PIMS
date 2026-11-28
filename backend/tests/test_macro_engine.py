@@ -12,13 +12,16 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.database.models import AnalyticsRun, MacroResult
-from app.data.providers.macro.fred import FREDAdapter
+from app.data.providers.macro.fred import FREDAdapter, SERIES_MAP
+from app.data.providers.macro.fred_fetch import FredFetcher
 from app.engines.macro.engine import (
+    classify_macro_regime,
     classify_regime,
     compute_metrics,
     rolling_average,
     run_macro_analysis,
     yoy_change,
+    yoy_change_pp,
     zscore,
 )
 
@@ -186,3 +189,137 @@ def test_macro_determinism(db_session, monkeypatch):
 def test_run_macro_analysis_rejects_unknown_series(db_session):
     with pytest.raises(ValueError):
         run_macro_analysis(db_session, ["NOPE"], period="YoY")
+
+
+# ---------------------------------------------------------------------------
+# Audit F2 — GDP series + frequency-aware YoY lag
+# ---------------------------------------------------------------------------
+
+
+def test_gdp_maps_to_real_quarterly_gdpc1():
+    # spec: GDPC1 (quarterly, real); the annual nominal GDPA was the blocker.
+    assert SERIES_MAP["GDP"] == "GDPC1"
+
+
+def test_yoy_change_pp_difference_and_insufficient():
+    values = [float(10 + i) for i in range(13)]  # 10..22
+    assert abs(yoy_change_pp(values) - 12.0) < 1e-9  # 22 - 10 pp
+    assert yoy_change_pp([1.0, 2.0, 3.0]) is None  # fewer than lag+1
+
+
+def test_quarterly_yoy_uses_lag_four():
+    # 6 quarters 100..105 -> YoY = (105 - 101)/101*100 (lag 4, not 12).
+    obs = [
+        {"date": f"{2024 + i // 4}-{(i % 4) * 3 + 1:02d}-01", "value": float(100 + i)}
+        for i in range(6)
+    ]
+    m = compute_metrics(obs, freq="quarterly")
+    assert m["yoy"] == pytest.approx((105 - 101) / 101 * 100)
+    assert m["yoy_unit"] == "%"
+
+
+# ---------------------------------------------------------------------------
+# Audit F3 — percent series YoY in percentage points
+# ---------------------------------------------------------------------------
+
+
+def test_percent_series_yoy_is_percentage_points():
+    values = [4.4] + [4.0] * 11 + [4.1]  # 13 monthly obs, last 4.1, t-12 = 4.4
+    obs = [{"date": f"2025-{i:02d}-01", "value": v} for i, v in enumerate(values, 1)]
+    m = compute_metrics(obs, freq="monthly", unit="percent")
+    assert m["yoy"] == pytest.approx(4.1 - 4.4)  # -0.30 pp, not -6.82 %
+    assert m["yoy_unit"] == "pp"
+
+
+# ---------------------------------------------------------------------------
+# Audit F4 — rolling window tracks frequency
+# ---------------------------------------------------------------------------
+
+
+def test_rolling_average_window_tracks_frequency():
+    quarterly = [{"date": "2024-01-01", "value": float(100 + i)} for i in range(6)]
+    # 6 quarters -> window 4 -> mean of last 4 (102..105) = 103.5
+    assert compute_metrics(quarterly, freq="quarterly")["rolling_avg_12"] == pytest.approx(103.5)
+    # daily window is 12 observations
+    daily = [{"date": "2025-01-01", "value": float(100 + i)} for i in range(20)]
+    assert compute_metrics(daily, freq="daily")["rolling_avg_12"] == pytest.approx(
+        sum(108 + i for i in range(12)) / 12
+    )
+
+
+# ---------------------------------------------------------------------------
+# Audit F6 — standard macro regime from GDP YoY + UNRATE direction
+# ---------------------------------------------------------------------------
+
+
+def test_classify_macro_regime():
+    assert classify_macro_regime(2.3, [4.4, 4.3, 4.2, 4.1])[0] == "EXPANSION"
+    assert classify_macro_regime(2.3, [4.1, 4.2, 4.3, 4.4])[0] == "CONTRACTION"  # rising
+    assert classify_macro_regime(-1.0, [4.4, 4.3, 4.2, 4.1])[0] == "CONTRACTION"  # GDP < 0
+    assert classify_macro_regime(None, [4.4, 4.1])[0] == "UNAVAILABLE"
+    regime, basis = classify_macro_regime(2.3, [4.4, 4.3, 4.2, 4.1])
+    assert regime == "EXPANSION"
+    assert basis["gdp_yoy"] == 2.3
+    assert basis["unrate_delta"] == pytest.approx(-0.1)
+
+
+def test_macro_endpoint_reports_standard_regime(db_session, monkeypatch):
+    gdp = [
+        {"date": f"{y}-{m:02d}-01", "value": v}
+        for y, m, v in [
+            (2024, 1, 100.0), (2024, 4, 101.0), (2024, 7, 102.0),
+            (2024, 10, 103.0), (2025, 1, 104.0),
+        ]
+    ]
+    unrate = [
+        {"date": f"2025-{m:02d}-01", "value": v}
+        for m, v in [(1, 4.4), (2, 4.3), (3, 4.2), (4, 4.1)]
+    ]
+    _mock_adapter(monkeypatch, {"GDPC1": gdp, "UNRATE": unrate})
+
+    data = client.get("/api/v1/analytics/macro", params={"series": "GDP,UNRATE"}).json()["data"]
+    assert data["regime"] == "EXPANSION"
+    assert data["regime_basis"]["gdp_yoy"] > 0
+    assert data["regime_basis"]["unrate_delta"] < 0
+    gdp_result = next(r for r in data["results"] if r["series_id"] == "GDP")
+    assert gdp_result["provider_series"] == "GDPC1"
+    assert gdp_result["frequency"] == "quarterly"
+
+
+# ---------------------------------------------------------------------------
+# Audit F7 — provider integrity (no fabricated data, HTTP errors surface)
+# ---------------------------------------------------------------------------
+
+
+def test_fred_fetcher_missing_key_returns_no_data():
+    assert FredFetcher("").fetch("CPIAUCSL") == []
+    assert FredFetcher("test_key").fetch("CPIAUCSL") == []
+
+
+def test_fred_fetcher_http_error_returns_no_data(monkeypatch):
+    import requests
+
+    def boom(*args, **kwargs):
+        raise requests.RequestException("down")
+
+    monkeypatch.setattr("app.data.providers.macro.fred_fetch.requests.get", boom)
+    assert FredFetcher("real-key").fetch("CPIAUCSL") == []
+
+
+def test_fred_adapter_http_error_is_logged(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "app.data.providers.macro.fred.logger.warning",
+        lambda *a, **k: calls.append(a),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "boom"})
+
+    adapter = FREDAdapter(api_key="k", transport=httpx.MockTransport(handler))
+    assert adapter.fetch_observations("CPIAUCSL") == []
+    assert calls and "CPIAUCSL" in calls[0]
+
+
+def test_fred_adapter_empty_key_returns_no_data():
+    assert FREDAdapter(api_key="").fetch_observations("CPIAUCSL") == []
