@@ -434,11 +434,11 @@ def run_analytics_backtest(
     payload: "BacktestRequest",
     db: Session = Depends(get_db),
 ):
-    """Deterministic Phase-1 backtest (BUY_HOLD / STATIC_WEIGHT) over stored
-    candles. Persists to analytics_runs (BACKTESTING) + backtest_metrics.
+    """Deterministic backtest over stored candles, persisted to analytics_runs
+    (BACKTESTING) + backtest_metrics.
 
-    No network / no signal — Phase 2 rule-based strategies are gated behind
-    owner approval (see docs/management/m4-gap-proposals/01-backtesting.md).
+    Phase 1: BUY_HOLD / STATIC_WEIGHT. Phase 2 rule-based: MA_CROSSOVER /
+    RSI_THRESHOLD / MOMENTUM (owner-approved rules). No network.
     """
     from app.database.models import Asset
 
@@ -455,6 +455,16 @@ def run_analytics_backtest(
 
     weights = payload.weights or {s: 1.0 / len(payload.symbols) for s in payload.symbols}
 
+    rule_config = {
+        "ma_fast": payload.ma_fast,
+        "ma_slow": payload.ma_slow,
+        "rsi_period": payload.rsi_period,
+        "rsi_oversold": payload.rsi_oversold,
+        "rsi_overbought": payload.rsi_overbought,
+        "momentum_period": payload.momentum_period,
+        "momentum_threshold": payload.momentum_threshold,
+    }
+
     try:
         result = run_backtest_for_assets(
             db,
@@ -466,6 +476,7 @@ def run_analytics_backtest(
             rebalance_every=payload.rebalance_every,
             fee_bps=payload.fee_bps,
             slippage_bps=payload.slippage_bps,
+            rule_config=rule_config,
         )
         db.commit()
     except InsufficientData as exc:
@@ -539,7 +550,10 @@ def run_analytics_attribution(
 
 class BacktestRequest(BaseModel):
     symbols: list[str] = Field(..., min_length=1, description="Asset symbols to backtest")
-    strategy: str = Field("STATIC_WEIGHT", pattern="^(BUY_HOLD|STATIC_WEIGHT)$")
+    strategy: str = Field(
+        "STATIC_WEIGHT",
+        pattern="^(BUY_HOLD|STATIC_WEIGHT|MA_CROSSOVER|RSI_THRESHOLD|MOMENTUM)$",
+    )
     weights: Optional[dict[str, float]] = Field(
         None, description="Target weight per symbol (normalized); default equal"
     )
@@ -548,6 +562,14 @@ class BacktestRequest(BaseModel):
     rebalance_every: int = Field(21, ge=1, description="Rebalance schedule (periods)")
     fee_bps: float = Field(10.0, ge=0, description="Transaction fee in bps")
     slippage_bps: float = Field(5.0, ge=0, description="Slippage in bps")
+    # Phase 2 rule config (ignored by BUY_HOLD / STATIC_WEIGHT)
+    ma_fast: int = Field(10, ge=1, description="MA_CROSSOVER fast SMA period")
+    ma_slow: int = Field(30, ge=2, description="MA_CROSSOVER slow SMA period")
+    rsi_period: int = Field(14, ge=2, description="RSI_THRESHOLD period")
+    rsi_oversold: float = Field(30.0, gt=0, lt=100, description="RSI entry level")
+    rsi_overbought: float = Field(70.0, gt=0, lt=100, description="RSI exit level")
+    momentum_period: int = Field(20, ge=1, description="MOMENTUM lookback periods")
+    momentum_threshold: float = Field(0.0, description="MOMENTUM entry return threshold")
 
 
 @router.post("/fundamental")

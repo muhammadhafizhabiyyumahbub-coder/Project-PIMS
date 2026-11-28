@@ -8,8 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.ai.research import orchestrator
 from app.api.envelope import error_response, success_response
+from app.config.settings import get_settings
 from app.core.db import get_db
 from app.database.models import Asset, ResearchJob, ResearchReport, ResearchRequest
+
+DEDUP_ACTION = "DEDUPLICATED"
 
 router = APIRouter(prefix="/research", tags=["Research"])
 
@@ -50,7 +53,12 @@ def _job_payload(job: ResearchJob) -> dict:
 @router.post("")
 @router.post("/requests")
 def create_research_request(body: ResearchRequestBody, db: Session = Depends(get_db)):
-    """Manual trigger: create request, gate on engine readiness, run bounded job."""
+    """Manual trigger: create request, gate on engine readiness, run bounded job.
+
+    Rate limit: cooldown (default 900s) per asset+timeframe+fingerprint.
+    If a recent request exists within cooldown, return it (action=DEDUPLICATED)
+    instead of calling the LLM again.
+    """
     asset = db.query(Asset).filter_by(symbol=body.symbol, is_active=True).one_or_none()
     if asset is None:
         return error_response("UNKNOWN_SYMBOL", f"unknown symbol {body.symbol}", 404)
@@ -58,6 +66,17 @@ def create_research_request(body: ResearchRequestBody, db: Session = Depends(get
     request, job, action = orchestrator.create_request(
         db, asset, body.timeframe, trigger_type="MANUAL"
     )
+    # Cooldown gate: if DEDUPLICATED, job is reused (no new LLM call)
+    if action == DEDUP_ACTION:
+        from app.api.websocket.channels import notify_research_status
+        settings = get_settings()
+        payload = _job_payload(job)
+        notify_research_status(payload)
+        return success_response({
+            "action": action,
+            "job": payload,
+            "note": f"request reused from recent run (cooldown {settings.research_cooldown_seconds}s)",
+        })
     if body.request_summary:
         request.request_summary = body.request_summary
         db.commit()

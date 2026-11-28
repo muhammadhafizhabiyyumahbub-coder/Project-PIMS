@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -174,6 +174,12 @@ class BacktestMetrics(Base):
     metric: Mapped[str] = mapped_column(String(50), nullable=False)
     value: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
     detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Phase 2 (rule-based) run-level summary, denormalized onto each metric row.
+    strategy_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    entry_rule: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    exit_rule: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    trade_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    win_rate: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
 
 
 class FactorResult(Base):

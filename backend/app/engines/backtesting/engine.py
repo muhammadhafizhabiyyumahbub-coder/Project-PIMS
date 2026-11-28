@@ -330,18 +330,60 @@ def run_backtest_for_assets(
     fee_bps: float = DEFAULT_FEE_BPS,
     slippage_bps: float = DEFAULT_SLIPPAGE_BPS,
     risk_free: float = DEFAULT_RISK_FREE,
+    rule_config: Optional[dict] = None,
 ) -> dict:
-    """Execute a Phase-1 backtest and persist to analytics_runs + backtest_metrics.
+    """Execute a backtest and persist to analytics_runs + backtest_metrics.
 
     `weights` keys are asset symbols. For BUY_HOLD, weights are ignored
-    (all-in on the single asset, or equal if multiple).
+    (all-in on the single asset, or equal if multiple). Phase 2 rule
+    strategies (MA_CROSSOVER / RSI_THRESHOLD / MOMENTUM) take exactly one
+    symbol; `rule_config` carries their parameters.
     """
+    from app.engines.backtesting.rules import RULE_STRATEGIES, compute_rule_based
+
     series_map: dict[str, Series] = {}
     for asset in assets:
         s = _collect_series(session, asset, timeframe, limit)
         series_map[s.symbol] = s
 
-    if strategy == "BUY_HOLD":
+    if strategy in RULE_STRATEGIES:
+        if len(assets) != 1:
+            raise ValueError(
+                f"{strategy} supports exactly one symbol per run, got {len(assets)}"
+            )
+        series = next(iter(series_map.values()))
+        raw = compute_rule_based(series, strategy, rule_config or {},
+                                 fee_bps, slippage_bps)
+        if raw.get("calculation_status") == "UNAVAILABLE":
+            now = datetime.now(timezone.utc)
+            run = AnalyticsRun(
+                engine_type="BACKTESTING",
+                asset_id=assets[0].id,
+                timeframe=timeframe,
+                observation_start=series.close_times[0],
+                observation_end=series.close_times[-1],
+                calculation_version=CALC_VERSION,
+                input_metadata={"strategy": strategy,
+                                "rule_config": rule_config or {}},
+                execution_status="UNAVAILABLE",
+                error_message=raw.get("reason"),
+                started_at=now,
+                completed_at=now,
+            )
+            session.add(run)
+            session.flush()
+            return {
+                "run_id": str(run.id),
+                "strategy": strategy,
+                "calculation_status": "UNAVAILABLE",
+                "reason": raw.get("reason"),
+                "metrics": raw,
+                "walkforward": {"in_sample_periods": 0, "out_of_sample_periods": 0},
+                "calculation_version": CALC_VERSION,
+                "observation_start": series.close_times[0].isoformat(),
+                "observation_end": series.close_times[-1].isoformat(),
+            }
+    elif strategy == "BUY_HOLD":
         # single-asset backtest (or equal-weight basket via static)
         if len(series_map) == 1:
             only = next(iter(series_map.values()))
@@ -358,7 +400,7 @@ def run_backtest_for_assets(
         raw = compute_static_weight(series_map, weights, rebalance_every,
                                     fee_bps, slippage_bps)
     else:
-        raise ValueError(f"unsupported strategy {strategy!r} in Phase 1")
+        raise ValueError(f"unsupported strategy {strategy!r}")
 
     # walk-forward annotation (deterministic split of the observation window)
     n_periods = raw.get("periods", 0)
@@ -383,6 +425,7 @@ def run_backtest_for_assets(
             "n_periods": n_periods,
             "walkforward_in": ins,
             "walkforward_oos": oos,
+            "rule_config": rule_config or {},
         },
         execution_status="COMPLETED",
         started_at=now,
@@ -393,7 +436,7 @@ def run_backtest_for_assets(
 
     metric_rows = []
     for key in ("total_return", "annual_return", "volatility", "sharpe",
-                "max_drawdown", "win_rate", "turnover", "cost"):
+                "max_drawdown", "win_rate", "turnover", "cost", "trade_count"):
         val = raw.get(key)
         # Guard: backtest metrics must fit Numeric(30,12) (|x| < 1e18).
         # Compound annualization over many 1h periods can produce inf/huge
@@ -406,6 +449,11 @@ def run_backtest_for_assets(
             metric=key,
             value=float(val) if val is not None else None,
             detail={"strategy": strategy},
+            strategy_type=strategy,
+            entry_rule=raw.get("entry_rule"),
+            exit_rule=raw.get("exit_rule"),
+            trade_count=raw.get("trade_count"),
+            win_rate=raw.get("win_rate"),
         ))
         metric_rows.append((key, val))
 
