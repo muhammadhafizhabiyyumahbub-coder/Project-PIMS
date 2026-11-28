@@ -1,8 +1,12 @@
-# M4 Gap Proposal — Macro Engine *(DEFERRED)*
+# M4 Gap Proposal — Macro Engine
 
-**Status:** PROPOSED — implementasi **DEFERRED** owner (menunggu data + metodologi approval).
+**Status:** IMPLEMENTED — Phase 1 (FRED) selesai 2026-11-28. Lihat `docs/REPORT_DEV.md`.
 **Priority:** di luar 4 engine M4.
 **Aturan:** Kode TIDAK dimulai sebelum data provider + metodologi di-approve. Proposal ini = **gap analysis** untuk review owner.
+**Implementation note:** source = FRED (opsi A), set indikator = CPI/GDP/UNRATE/FEDFUNDS/DFF/10YUSTR,
+metrik = YoY + rolling-12 + z-score + regime (level-trend proxy). Tabel =
+`macro_results` (migration `e8a9b0c1d2e3`). Endpoint `GET /api/v1/analytics/macro`.
+Keputusan regime model (§14 #6) + revision policy (§14 #4) masih Phase 2.
 
 ---
 

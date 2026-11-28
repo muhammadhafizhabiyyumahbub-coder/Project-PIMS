@@ -306,3 +306,26 @@ class ScenarioResult(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False
     )
+
+
+class MacroResult(Base):
+    """Macro indicator metrics (M4 Macro Engine, Phase 1).
+
+    One row per (run, series, metric). Persisted under an AnalyticsRun
+    (engine_type=MACRO). Source is FRED (public US macro series).
+    UNAVAILABLE metrics are stored as NULL value (never fabricated as 0).
+    """
+
+    __tablename__ = "macro_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    analytics_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics_runs.id"), nullable=False, index=True
+    )
+    analysis_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    series_id: Mapped[str] = mapped_column(String(30), nullable=False)
+    value: Mapped[float | None] = mapped_column(Numeric(30, 12), nullable=True)
+    period: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False
+    )

@@ -39,6 +39,7 @@ def test_api_contract_snapshot():
         ("GET", "/api/v1/assets/{asset_id}"),
         ("GET", "/api/v1/analytics/allocation"),
         ("GET", "/api/v1/analytics/correlation"),
+        ("GET", "/api/v1/analytics/macro"),
         ("GET", "/api/v1/analytics/market-regime"),
         ("GET", "/api/v1/analytics/performance"),
         ("GET", "/api/v1/analytics/risk"),

@@ -26,6 +26,8 @@ from app.engines.backtesting.engine import (
 from app.engines.factor.engine import run_factor_for_universe, FactorConfig
 from app.engines.fundamental.engine import run_fundamental_for_universe
 from app.engines.sentiment.engine import run_sentiment_for_universe
+from app.engines.macro.engine import run_macro_analysis
+from app.data.providers.macro.fred import SERIES_MAP as MACRO_SERIES
 from app.engines.scenario.engine import run_scenario_for_portfolio
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -616,6 +618,47 @@ def run_analytics_sentiment(
         "run_id": result["run_id"],
         "status": result["status"],
     })
+
+
+@router.get("/macro")
+def get_analytics_macro(
+    period: str = Query(
+        "YoY",
+        description="Reported metric: YoY | LEVEL | ROLLING_AVG_12M | ZSCORE",
+    ),
+    series: str = Query(
+        "CPI,GDP,UNRATE,FEDFUNDS",
+        description="Comma-separated macro series keys",
+    ),
+    db: Session = Depends(get_db),
+):
+    """Macro indicators from FRED (M4 Macro Engine, Phase 1).
+
+    Fetches public US macro series via FRED and persists analytics_runs (MACRO)
+    + macro_results. Deterministic math; missing data -> UNAVAILABLE (value null).
+    """
+    keys = [s.strip().upper() for s in series.split(",") if s.strip()]
+    if not keys:
+        return error_response("VALIDATION_ERROR", "no series supplied", 422)
+    unknown = [k for k in keys if k not in MACRO_SERIES]
+    if unknown:
+        return error_response(
+            "VALIDATION_ERROR",
+            f"unknown series {unknown}; allowed: {sorted(MACRO_SERIES)}",
+            422,
+        )
+
+    try:
+        result = run_macro_analysis(db, keys, period=period)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return error_response("INVALID_CONFIG", str(exc), 422)
+    except Exception as exc:
+        db.rollback()
+        return error_response("SERVER_ERROR", str(exc), 500)
+
+    return success_response(result)
 
 
 class FundamentalRequest(BaseModel):
