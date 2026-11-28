@@ -380,3 +380,91 @@ Architecture Changes:
 Next Recommended Task:
 - Owner decision on multi-asset rule portfolios + short support, then wire
   scanner/technical signals into a RULE_BASED scanner-backed strategy.
+
+---
+
+# PIMS — Development Report (Watchlist module, api-spec §17)
+
+TASK REPORT
+
+Task: Implement Watchlist (2 tables, single-user) — model + migration + repo + REST + tests
+Status: Implemented + tested + live-verified (commits on `master`, not pushed)
+
+Files Created:
+- backend/app/database/models/watchlist.py (`Watchlist`, `WatchlistItem`)
+- backend/app/database/migrations/versions/a3f5c7d9e1b2_add_watchlist_tables.py
+- backend/app/database/repositories/watchlist.py
+- backend/app/api/rest/watchlist.py
+- backend/app/schemas/watchlist.py
+- backend/tests/test_watchlist.py
+
+Files Modified:
+- backend/app/database/models/__init__.py (export `Watchlist`, `WatchlistItem`)
+- backend/app/database/repositories/__init__.py (register `watchlist`)
+- backend/app/main.py (include watchlist router under `/api/v1`)
+- backend/tests/conftest.py (add `watchlist_items`, `watchlists` to TRUNCATE list)
+- backend/tests/test_api_contract_snapshot.py (add 7 watchlist endpoints)
+
+Skills used (checked `~/.config/opencode/skills`):
+- `tdd` — tests written at public seams (HTTP endpoints + DB), independent
+  expected values; `test_unique_constraint_enforced_in_db` locks the DB-level
+  unique rule directly.
+- `implement-spec` — read api-spec §17 + technical-decisions §7.17 first; scope
+  held to the 7-endpoint ticket, no schema invention.
+
+Implementation Summary:
+- `watchlists(id, name, description, created_at, updated_at)`.
+- `watchlist_items(id, watchlist_id FK→watchlists ON DELETE CASCADE,
+  asset_id FK→assets ON DELETE RESTRICT, added_at)`, `UNIQUE(watchlist_id,
+  asset_id)`, index on both FKs. No `user_id` (single-user).
+- Repository: list/create/get(+items)/update/delete + add/get/remove item.
+- Endpoints: `GET/POST /watchlists`, `GET/PATCH/DELETE /watchlists/{id}`,
+  `POST /watchlists/{id}/items`, `DELETE /watchlists/{id}/items/{asset_id}`.
+  Errors: 404 (unknown watchlist/asset/uuid), 409 (duplicate item), 422
+  (body validation via Pydantic).
+- Item `added_at` used per task; technical-decisions §7.17 says `created_at`
+  for that column. Task instruction (owner) takes priority; reported here, not
+  changed silently.
+
+### Migration head deviation (IMPORTANT)
+Task stated head = `e8a9b0c1d2e3`. Actual head is **`f2b3c4d5e6a7`**
+(`add_backtest_rule_columns`, already `down_revision = e8a9b0c1d2e3`). Using
+`e8a9b0c1d2e3` as the new down_revision would create **two heads** and break
+`alembic upgrade head` at startup. New migration
+`a3f5c7d9e1b2` therefore has `down_revision = f2b3c4d5e6a7`, keeping a single
+head (`alembic heads` → `a3f5c7d9e1b2`).
+
+Tests Executed:
+- `backend/.venv/Scripts/python.exe -m pytest tests/test_watchlist.py -v`
+- Full suite: `... -m pytest tests -q` (from `backend/`, not parallel).
+
+Test Results:
+- `tests/test_watchlist.py`: **10 passed** (CRUD, duplicate 409, FK/unique,
+  404/422, cascade delete).
+- Full suite: **410 passed, 1 skipped** (no regression).
+
+Live verification (TestClient + dev DB `pims`):
+- Migration applied: `f2b3c4d5e6a7 -> a3f5c7d9e1b2`.
+- create watchlist → 201; add item (`BTCUSDT`) → 201 with symbol; detail shows
+  `item_count=1` + items; remove item → 200; watchlist delete cascades items.
+
+Known Issues / Limitations:
+- `pims_test` is **not parallel-safe**: running this suite concurrently with
+  another process on `pims_test` caused intermittent `DeadlockDetected` /
+  `DuplicateTable (pg_type_typname_nsp_index)` at fixture setup, and one
+  spurious add-item 404. Green only when run alone; verified with an idle-DB
+  gate. Pre-existing, matches `docs/QA_REPORT.md`.
+- `a3f5c7d9e1b2` and other watchlist files were already swept into commit
+  `d7fb248` by a concurrent automation (`git add -A`) before this task's own
+  commit; a follow-up commit `1ad751d` removed two scratch artifacts that
+  commit had captured (`backend/pyver.txt`, `backend/scripts/
+  debug_watchlist_flow.py`). Not pushed.
+
+Architecture Changes:
+- None. Additive tables/models/repo/schemas/router per approved two-table design
+  (technical-decisions §7.17); API contract follows api-spec §17 unchanged.
+
+Next Recommended Task:
+- Frontend watchlist view (deferred), and a migration-hygiene note in
+  `docs/decisions/technical-decisions.md` §7.17 (watchlist now implemented).
+
