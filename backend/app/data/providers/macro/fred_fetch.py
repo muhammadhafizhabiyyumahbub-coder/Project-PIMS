@@ -33,7 +33,14 @@ class FredFetcher:
                 resp = client.get(f"{self.base_url}/fred/series/observations", params=params)
                 resp.raise_for_status()
         except httpx.HTTPError as exc:
-            logger.warning("FRED fetch failed for series %s: %s", series_id, exc)
+            # Never log/raise the request URL: it embeds the api_key (query
+            # param). httpx's str(HTTPStatusError) includes the full URL, so
+            # reduce to status code + a generic reason (audit §26 key-leak).
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            logger.warning(
+                "FRED fetch failed for series %s: http status %s (api key redacted)",
+                series_id, status,
+            )
             return []
         out = []
         for obs in resp.json().get("observations", []):

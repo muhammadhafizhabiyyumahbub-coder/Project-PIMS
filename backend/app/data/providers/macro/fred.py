@@ -63,8 +63,13 @@ class FREDAdapter:
                 resp = client.get(f"{self.base_url}/fred/series/observations", params=params)
                 resp.raise_for_status()
         except httpx.HTTPError as exc:
-            # Log series only — never the URL (api_key leaked via query string).
-            logger.warning("FRED fetch failed for series %s: %s", series_id, exc)
+            # Log series + status only — never the URL (api_key leaks via the
+            # query string; httpx's str(HTTPStatusError) embeds the full URL).
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            logger.warning(
+                "FRED fetch failed for series %s: http status %s (api key redacted)",
+                series_id, status,
+            )
             return []
 
         out = []

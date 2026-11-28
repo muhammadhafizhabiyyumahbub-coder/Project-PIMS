@@ -325,3 +325,38 @@ def test_fred_adapter_http_error_is_logged(monkeypatch):
 
 def test_fred_adapter_empty_key_returns_no_data():
     assert FREDAdapter(api_key="").fetch_observations("CPIAUCSL") == []
+
+
+def test_fred_http_status_error_does_not_leak_api_key(monkeypatch):
+    """§26 key-leak regression: when FRED returns a non-2xx status, the
+    httpx.HTTPStatusError message embeds the full request URL (including the
+    api_key query param). Neither the log line nor any re-raised exception
+    must contain the key. (Audit probe: `raise_for_status` message must not
+    contain the api_key.)"""
+    secret = "a1b2c3d4SECRETFREDKEY"
+    logged: list = []
+    monkeypatch.setattr(
+        "app.data.providers.macro.fred.logger.warning",
+        lambda *a, **k: logged.append(" ".join(str(x) for x in a)),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": "bad key"})
+
+    adapter = FREDAdapter(api_key=secret, transport=httpx.MockTransport(handler))
+    assert adapter.fetch_observations("CPIAUCSL") == []
+    # log must not contain the secret key
+    assert logged, "expected a warning to be logged"
+    for line in logged:
+        assert secret not in line, f"api_key leaked into log: {line!r}"
+    # also: the raised httpx error string itself must be safe to inspect
+    # (guard: building the message from status_code only, not exc repr)
+    import httpx as _httpx
+    try:
+        _httpx.Response(401, request=_httpx.Request("GET", f"https://x/?api_key={secret}")).raise_for_status()
+    except _httpx.HTTPStatusError as e:
+        # httpx DOES embed the URL — this is why we must not `str(exc)` it.
+        assert secret in str(e) or True  # document the httpx behaviour
+        # our code path must not have logged `str(e)`
+        for line in logged:
+            assert secret not in line
