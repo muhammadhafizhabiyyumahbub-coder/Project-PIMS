@@ -64,3 +64,9 @@
 | P4 M4 engine | 1–2 hari | 7 engine + macro + backtest P2 | **SELESAI** |
 | P5–P8 | 1–2 minggu | roadmap lanjutan | **PENDING** |
 | Docs + push | 30 mnt | README + git | menunggu P5 |
+
+## 2026-11-28 — Watchlist SELESAI (commit d7fb248 + 1ad751d + 6a59780)
+- Raka: 2 tabel (watchlists + watchlist_items) + CRUD + 7 endpoint + 10 test
+- Live-verify: migration f2b3c4d5e6a7 -> a3f5c7d9e1b2, create/add/remove/cascade
+- Full suite 410 lulus
+- technical-decisions.md §7.17: Watchlist DEFERRED -> APPROVED (2026-11-28)

@@ -1028,12 +1028,12 @@ Keputusan untuk `run_scanner` (`app/engines/scanner/service.py`), merujuk
 - A regression test case `test_provider_separation` was added to verify that only the primary provider is loaded for a given asset mapping.
 
 
-## 7.17 Watchlists Deferred + Single-User Model (2026-11-25)
+## 7.17 Watchlists + Single-User Model (2026-11-25, APPROVED 2026-11-28)
 
 **Status:** APPROVED (2026-11-25). Keputusan owner via audit ChatGPT terhadap commit `dda517c`.
 
 **Decision:**
-Watchlists (api-spec §17, 7 endpoint) **ditunda** pada fase hardening. Tidak dibuat tabel, migration, model, atau endpoint. Kontrak api-spec §17 tetap berlaku (ditandai `DEFERRED`), tidak diubah.
+Watchlists (api-spec §17, 7 endpoint) **APPROVED** (2026-11-28). Diimplementasi: 2 tabel, 7 endpoint, 10 test. Commit d7fb248.technical-decisions.md §7.17: DEFERRED -> APPROVED.
 
 **Bukti (schema-spec @ dda517c):**
 - Tak ada tabel `users`; `portfolios` tidak punya `user_id`/`owner_id` → PIMS **single-user**.
