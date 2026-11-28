@@ -135,3 +135,94 @@ Architecture Changes:
 Next Recommended Task:
 - Owner decision on regime model wiring (`market_regime`) + revision policy,
   then Phase 2 (yield-curve slope, real rate, VIX risk-on/off proxy).
+
+---
+
+# PIMS — Development Report (M4 Macro Engine — formula audit fixes)
+
+TASK REPORT
+
+Task: Fix 5 Macro Engine bugs from `docs/management/MACRO_FORMULA_AUDIT.md` (Nadia)
+Status: Implemented + tested; commit `652f5a9` on `master` (not pushed)
+
+Files Modified:
+- backend/app/engines/macro/engine.py
+- backend/app/data/providers/macro/fred.py
+- backend/app/data/providers/macro/fred_fetch.py
+- backend/tests/test_macro_engine.py
+
+Skills used:
+- `tdd` (SKILL.md) — one failing test per audit finding before the fix, at the
+  public seams (`compute_metrics`, `classify_macro_regime`, `FREDAdapter`,
+  `FredFetcher`, the HTTP endpoint); expected values taken from the audit's
+  independent hand computations, not recomputed the way the code does.
+- `implement-spec` (SKILL.md) — not used: it needs a task tracker/tickets
+  (frontier graph) and an integration branch, none exists for this bug list.
+
+Implementation Summary:
+- F2: `SERIES_MAP["GDP"]` `GDPA` (annual nominal) -> `GDPC1` (quarterly real);
+  YoY lag follows frequency (`YOY_LAG`: 12 monthly, 4 quarterly, 252 daily).
+- F4: rolling window follows frequency (`MA_WINDOW`: 12 monthly, 4 quarterly,
+  12 daily) instead of global `12`.
+- F3: `SERIES_META` tags unit; percent series (UNRATE, FEDFUNDS, DFF, 10YUSTR)
+  report YoY in percentage points (`yoy_change_pp`, `yoy_unit="pp"`), level
+  series keep relative `%`.
+- F6: new `classify_macro_regime` — EXPANSION iff real GDP YoY > 0 AND UNRATE
+  is falling (latest < previous), else CONTRACTION; exposed as top-level
+  `regime` + `regime_basis` in the API response. Per-series `regime` kept
+  unchanged as a level-trend proxy (persisted REGIME rows unchanged).
+- F7: empty/`test_key` API key -> `[]` (no stub `100.0`); HTTP errors logged
+  and return `[]` (UNAVAILABLE). `"."`/missing values skipped.
+- `CALC_VERSION` -> `macro.phase1.v2` (methodology changed).
+
+| # | before | after |
+|---|---|---|
+| F2 GDP | GDPA annual, YoY 82.82% | GDPC1 quarterly, YoY 2.29% (lag 4) |
+| F3 UNRATE | YoY -6.818% (relative) | YoY -0.30 pp |
+| F4 GDP MA | 12 quarters (12y) 22,980 | 4 quarters 24,368.27 |
+| F6 regime | level >= MA12 | GDP YoY>0 & UNRATE falling |
+| F7 key empty | fabricated 100.0 | UNAVAILABLE; HTTP err logged |
+
+Tests Executed:
+- `pytest backend/tests/test_macro_engine.py -q` (24 tests).
+
+Test Results:
+- `tests/test_macro_engine.py`: 24 passed (13 original unchanged + 11 new for
+  F2/F3/F4/F6/F7).
+- Full suite (`pytest -q`): 345 passed, 9 failed, 28 errors, 1 skipped — the
+  failures/errors are pre-existing DB issues (`UndefinedTable: relation
+  "portfolios" does not exist`, `DeadlockDetected`) in unrelated modules
+  (`test_asset_api`, `test_analytics_api`, ...); they reproduce in isolation
+  with no macro code involved. No macro module is among them.
+
+Live verification (`TestClient`, real FRED key + dev DB):
+`GET /api/v1/analytics/macro?period=YoY&series=CPI,GDP,UNRATE,FEDFUNDS` -> 200
+
+| series | provider | freq | period | level | YoY | unit | MA | regime |
+|---|---|---|---|---|---|---|---|---|
+| CPI | CPIAUCSL | monthly | 2026-10-01 | 337.476 | 4.081 | % | 331.259 | EXPANSION |
+| GDP | GDPC1 | quarterly | 2026-07-01 | 24665.201 | 2.290 | % | 24368.27 | EXPANSION |
+| UNRATE | UNRATE | monthly | 2026-10-01 | 4.1 | -0.300 | pp | 4.267 | CONTRACTION |
+| FEDFUNDS | FEDFUNDS | monthly | 2026-10-01 | 3.88 | -0.210 | pp | 3.693 | EXPANSION |
+
+- `macro_regime: EXPANSION`, `regime_basis: {gdp_yoy: 2.29, unrate_delta: -0.10}`.
+- YoY GDP now matches the audit's hand value (2.29%), UNRATE/FEDFUNDS in pp,
+  regime follows the standard rule.
+
+Known Issues / Limitations:
+- Per-series `regime` still the level-trend proxy (persisted REGIME rows);
+  only the top-level `macro_regime` follows the GDP/UNRATE rule. Tests lock
+  the per-series behavior.
+- UNRATE "falling" uses month-over-month (latest vs previous), matching the
+  audit's expected-manual (4.2 -> 4.1). A 3-month delta is the audit's
+  recommendation but is not applied (no ticket for it).
+- `httpx` logs the full FRED URL at INFO, including `api_key` — secret visible
+  in logs (pre-existing, `app/core/logging.py`, out of this task's scope).
+
+Architecture Changes:
+- None. Same engine/provider/table; API response gained additive
+  `regime`/`regime_basis` fields and per-result `frequency`/`unit`/`yoy_unit`.
+
+Next Recommended Task:
+- Silence the httpx INFO URL log (secret leak), and owner decision on the
+  3-month UNRATE delta + z-score window (`ddof`, window) per audit item 3/5.

@@ -7,16 +7,20 @@
 
 ## Gap dari perencanaan awal
 
-| # | Item | Status | Prioritas | Pemilik |
-|---|---|---|---|---|
-| T1 | Macro engine (FRED API) | TUNDA (butuh key) | P1 | Raka |
-| T2 | Backtest Phase 2 (rule-based) | GATED §26 | P2 | Raka |
-| T3 | Scenario hypothetical | GATED §26 | P2 | Raka |
-| T4 | Watchlist (2 tabel) | DEFERRED | P2 | Raka |
-| T5 | Fundamental Phase 2 | belum | P3 | Raka |
-| T6 | Scheduler analitis | manual | P3 | Raka |
-| T7 | Beta + benchmark + HHI | belum | P3 | Raka |
-| T8 | 9 endpoint gap spec | by-design | P3 | Raka |
+| # | Item | Status | Prioritas | Pemilik | Tenggat |
+|---|---|---|---|---|---|
+| T1 | Macro engine (FRED API) | SEDANG DIKERJAKAN — Raka (Tara: data FRED, Sakti: QA) | P1 | Raka | 2026-11-28 EOD |
+| T2 | Backtest Phase 2 (rule-based) | PENDING — gate §26, blokir T1 | P2 | Raka | 2026-11-29 |
+| T3 | Scenario hypothetical | GATED §26 — blokir T2 | P2 | Raka | 2026-11-30 |
+| T4 | Watchlist (2 tabel) | PENDING — skema decided, tak perlu approval | P2 | Raka | 2026-11-29 |
+| T5 | Fundamental Phase 2 | PENDING — blokir T1 (data provider) | P3 | Raka | 2026-11-30 |
+| T6 | Scheduler analitis | manual, tak urgent | P3 | Raka | fleksibel |
+| T7 | Beta + benchmark + HHI | belum mulai | P3 | Raka | fleksibel |
+| T8 | 9 endpoint gap spec | by-design, owner decision | P3 | Raka | fleksibel |
+
+**QA keseluruhan:** Sakti jalan — target suite 355 passed/0 failed.
+**Bottleneck:** T1 (Macro) → kunci T2, T3, T5. QA (Sakti) paralel, tak blokir.
+**Dependensi:** T1→T2→T3; T1→T5; T4 berdiri sendiri.
 
 ## Alur kerja (per task)
 
@@ -40,11 +44,12 @@
 
 ## Timeline (perkiraan)
 
-| Fase | Durasi | Output |
-|---|---|---|
-| Audit + breakdown | 30 mnt | doc ini + LOC report |
-| Macro engine (T1) | 1-2 jam | engine + test + endpoint |
-| Backtest P2 (T2) | 1-2 jam | rule-based engine |
-| Watchlist (T4) | 1 jam | tabel + CRUD |
-| QA + docs | 30 mnt | test lulus + README |
-| Obsidian + push | 30 mnt | vault PIMS + git |
+| Fase | Durasi | Output | Status saat ini |
+|---|---|---|---|
+| Macro engine (T1) | 1–2 jam | engine + test + endpoint | SEDANG DIKERJAKAN (Raka) |
+| QA suite (Sakti) | paralel | 355 passed / 0 failed | SEDANG BERJALAN |
+| Backtest P2 (T2) | 1–2 jam | rule-based engine | PENDING — blokir T1 |
+| Watchlist (T4) | 1 jam | tabel + CRUD | PENDING — standalone |
+| Scenario (T3) | 1 jam | hypothetical | GATED §26 — blokir T2 |
+| Fundamental P2 (T5) | 1–2 jam | engine | PENDING — blokir T1 |
+| Docs + push | 30 mnt | README + git | menunggu T1–T5 |

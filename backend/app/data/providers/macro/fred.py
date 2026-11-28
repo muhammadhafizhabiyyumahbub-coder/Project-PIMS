@@ -63,8 +63,8 @@ class FREDAdapter:
                 resp = client.get(f"{self.base_url}/fred/series/observations", params=params)
                 resp.raise_for_status()
         except httpx.HTTPError as exc:
-            # Surface transient failures instead of silently returning empty.
-            logger.warning("FRED fetch failed for %s: %s", series_id, exc)
+            # Log series only — never the URL (api_key leaked via query string).
+            logger.warning("FRED fetch failed for series %s: %s", series_id, exc)
             return []
 
         out = []
