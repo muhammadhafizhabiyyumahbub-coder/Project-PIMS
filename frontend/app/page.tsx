@@ -26,6 +26,12 @@ export default function Home() {
           >
             Portfolios
           </Link>
+          <Link
+            href="/watchlist"
+            className="text-[11px] text-accent underline underline-offset-2 focus-visible:outline focus-visible:outline-accent"
+          >
+            Watchlists
+          </Link>
         </div>
       </header>
       <PortfolioWidget />

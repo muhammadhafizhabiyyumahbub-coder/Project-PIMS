@@ -685,6 +685,30 @@ export interface AnalyticsRunDetail {
   >;
 }
 
+// --- Watchlists (api-spec §17) ----------------------------------------------
+// Membership carries no valuation: an item is identity only (asset_id/symbol).
+// item_count comes from the backend; the UI never computes it.
+
+export interface Watchlist {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  item_count: number;
+}
+
+export interface WatchlistItem {
+  asset_id: string;
+  symbol: string | null;
+  name: string | null;
+  added_at: string;
+}
+
+export interface WatchlistDetail extends Watchlist {
+  items: WatchlistItem[];
+}
+
 // --- Asset summary (api-spec §11) -------------------------------------------
 // id and symbol are internal identity; provider symbols are never surfaced here.
 

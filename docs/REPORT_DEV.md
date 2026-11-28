@@ -468,3 +468,81 @@ Next Recommended Task:
 - Frontend watchlist view (deferred), and a migration-hygiene note in
   `docs/decisions/technical-decisions.md` §7.17 (watchlist now implemented).
 
+---
+
+# P5 — Dashboard Watchlist Panel
+
+TASK REPORT
+
+Task: P5 Dashboard Watchlist Panel — connect the existing watchlist API to the dashboard
+Status: Implemented + verified
+
+Files Created:
+- frontend/src/features/watchlist/WatchlistPanel.tsx
+- frontend/app/watchlist/page.tsx
+- docs/REPORT_DEV.md (this section)
+
+Files Modified:
+- frontend/src/services/api.ts (added listWatchlists / getWatchlist / createWatchlist / addWatchlistItem + type imports)
+- frontend/src/types/api.ts (added Watchlist, WatchlistItem, WatchlistDetail)
+- frontend/app/page.tsx (added "Watchlists" link in the dashboard header nav)
+
+Skills used (from `~/.config/opencode/skills`):
+- `tdd` — tests live at the public seam (HTTP endpoints via TestClient), no
+  private internals, independent expected values. The backend seam was already
+  covered by the existing suite, so no new test file was added (see Known Issues).
+- `implement-spec` — ticket scope limited to P5; read the existing dashboard/API
+  contracts and reused them rather than inventing new ones.
+
+Implementation Summary:
+- Backend: no change. Watchlist endpoints already complete in `d7fb248`
+  (`backend/app/api/rest/watchlist.py`, 7 routes under `/api/v1/watchlists`).
+- Frontend data layer: 4 API functions + 3 types mirroring the existing
+  `{data, meta}` envelope / `ApiRequestError` pattern in `services/api.ts`.
+- Panel: `WatchlistPanel` (client) lists watchlists (`GET /watchlists`, shows
+  `item_count`), loads items on select (`GET /watchlists/{id}` -> symbol, name),
+  creates a watchlist, and adds an instrument via the shared `AssetPicker`
+  (`POST /watchlists/{id}/items`). Loading / empty / error + retry states match
+  `PortfolioList` / `PortfolioWidget`.
+- Route: `app/watchlist/page.tsx` (`metadata` + panel), same shape as
+  `app/scanner/page.tsx`.
+- Link added in the dashboard header next to Scanner / Portfolios.
+- Deviation from the task wording: the repo has no `app/(dashboard)/` route
+  group and no `app/(dashboard)/components/`. Followed the existing convention
+  instead — feature component under `src/features/`, page under `app/watchlist/`.
+
+Tests Executed:
+- Frontend typecheck (no build): `node node_modules/typescript/bin/tsc --noEmit`
+  (from `frontend/`).
+- Backend: `backend/.venv/Scripts/python.exe -m pytest tests/test_watchlist.py -q`
+  (sequential; not run in parallel).
+
+Test Results:
+- `tsc --noEmit`: clean (no diagnostics).
+- `tests/test_watchlist.py`: 10 passed. Covers the required codes — list 200,
+  detail 200, `GET/PATCH/DELETE` missing -> 404, invalid UUID -> 404,
+  create/patch/add-item validation -> 422, duplicate item -> 409. This is the
+  P5 "watchlist endpoint 200 / 404 / 422" integration coverage.
+- Live-verify: `GET /api/v1/watchlists` returns 200 (asserted in
+  `test_create_and_list`; `meta.count` matches).
+
+Known Issues:
+- `backend/tests/test_watchlist_api.py` was NOT created: its stated scope
+  (4-5 TestClient cases for 200 / 404 / 422) is already fully covered by the
+  existing `backend/tests/test_watchlist.py` (10 cases, same file/DB seam).
+  A second file would duplicate the same responsibility (AGENTS.md §18.9).
+  Say the word if the exact filename is required.
+- No frontend test file: the repo has no JS test runner installed (no
+  vitest/jest); the task scoped the frontend check to "verify file, no build".
+  Adding a runner would add an unrequested dependency. Verification here is the
+  clean `tsc --noEmit` typecheck.
+- `pims_test` is not parallel-safe (pre-existing, see `docs/QA_REPORT.md`);
+  the watchlist suite was run alone.
+
+Architecture Changes:
+- None. Additive frontend files only; API contract (`api-spec §17`) unchanged.
+
+Next Recommended Task:
+- Add assets to a watchlist from the instrument page, and a project-level JS
+  test runner if the frontend is to get real component tests.
+

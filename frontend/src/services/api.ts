@@ -35,6 +35,9 @@ import type {
   FundamentalResponse,
   SentimentRequest,
   SentimentResponse,
+  Watchlist,
+  WatchlistDetail,
+  WatchlistItem,
 } from "@/types/api";
 
 export class ApiRequestError extends Error {
@@ -355,6 +358,33 @@ export function runSentiment(body: SentimentRequest): Promise<Envelope<Sentiment
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+// --- Watchlists (api-spec A17) -----------------------------------------------
+
+export function listWatchlists(): Promise<Envelope<Watchlist[]>> {
+  return request<Watchlist[]>(`/api/v1/watchlists`);
+}
+
+/** Detail includes items; it is the only endpoint that returns them. */
+export function getWatchlist(watchlistId: string): Promise<Envelope<WatchlistDetail>> {
+  return request<WatchlistDetail>(`/api/v1/watchlists/${encodeURIComponent(watchlistId)}`);
+}
+
+export function createWatchlist(body: { name: string; description?: string }): Promise<Envelope<Watchlist>> {
+  return request(`/api/v1/watchlists`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function addWatchlistItem(watchlistId: string, assetId: string): Promise<Envelope<WatchlistItem>> {
+  return request(`/api/v1/watchlists/${encodeURIComponent(watchlistId)}/items`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ asset_id: assetId }),
   });
 }
 
