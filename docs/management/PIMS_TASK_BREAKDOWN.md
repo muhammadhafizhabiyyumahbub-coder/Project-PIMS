@@ -70,3 +70,9 @@
 - Live-verify: migration f2b3c4d5e6a7 -> a3f5c7d9e1b2, create/add/remove/cascade
 - Full suite 410 lulus
 - technical-decisions.md §7.17: Watchlist DEFERRED -> APPROVED (2026-11-28)
+
+## 2026-11-28 — P5 Dashboard Watchlist + P8 Final QA
+- P5: WatchlistPanel.tsx + page + api service (Raka, commit 47f6968)
+- P8: RELEASE_NOTES + KNOWN_ISSUES update (commit cf4c720)
+- CI hijau: 408 test lulus (cf4c720)
+- Status: M4 complete + watchlist + dashboard + security + docs
