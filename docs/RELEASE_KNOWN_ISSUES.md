@@ -117,3 +117,9 @@ Angka di bawah diambil dari perintah nyata, bukan perkiraan.
 ### 3.3 Insiden data 2026-11-22
 
 Database dev `pims` kehilangan seluruh tabel saat pengerjaan reproduksi CI. Penyebab langsung: `conftest.py` memuat `.env` root sehingga suite menunjuk DB dev lalu `TRUNCATE`. Perbaikan: conftest memaksa DB `*_test` dan menolak jalan bila bukan DB test; ditambah backup harian `D:\pims-backups` (cron `pims-db-backup-daily`, retensi 7). Data lama tidak dapat dipulihkan (tidak ada backup saat itu).
+
+## 2026-11-28 — Status
+- H-3: 9 engine tanpa test anti-kebocoran (Q2 hanya 3/13) — pending
+- M-1: Tidak ada test regresi compose (5432/0.0.0.0 bisa kembali) — pending
+- P5: Dashboard watchlist panel — Raka implementasi
+- pims_test flaky lokal (test isolation) — CI lulus

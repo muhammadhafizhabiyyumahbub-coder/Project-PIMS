@@ -252,3 +252,10 @@ transactions
 menjalankan dan memakai, dan
 [`docs/RELEASE_KNOWN_ISSUES.md`](RELEASE_KNOWN_ISSUES.md) untuk isu yang masih
 terbuka.
+
+## 2026-11-28 — M4 Complete + Watchlist
+- **M4 7 Engine** (correlation, backtesting, factor, attribution, scenario, fundamental, sentiment)
+- **Macro FRED** (fred.py + fred_fetch.py, FRED data, UNAVAILABLE tanpa key)
+- **Watchlist** (2 tabel + 7 endpoint + 10 test, technical-decisions 7.17 APPROVED)
+- **Security** (Q1+Q2+Q5 + C-1 fix api_key leak + H-1 LAN fix)
+- **CI hijau** (408 test lulus)
