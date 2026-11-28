@@ -295,3 +295,88 @@ Architecture Changes:
 Next Recommended Task:
 - Q3: perbaiki import helper test (`from conftest import ...` / pindah ke
   `tests/helpers.py`), agar suite hijau penuh dari root.
+
+---
+
+# PIMS — Development Report (M4 Backtesting Engine — Phase 2, rule-based)
+
+TASK REPORT
+
+Task: M4 Backtesting Phase 2 — rule-based strategies (MA_CROSSOVER / RSI_THRESHOLD / MOMENTUM)
+Status: Implemented + tested + live-verified (commit on `master`, not pushed)
+
+Files Created:
+- backend/app/engines/backtesting/rules.py
+- backend/app/database/migrations/versions/f2b3c4d5e6a7_add_backtest_rule_columns.py
+- backend/tests/test_backtest_phase2.py
+
+Files Modified:
+- backend/app/engines/backtesting/engine.py (rule branch + persist columns)
+- backend/app/engines/backtesting/__init__.py (exports)
+- backend/app/database/models/analytics.py (`BacktestMetrics` columns)
+- backend/app/api/rest/analytics_v2.py (`BacktestRequest` + rule_config)
+
+Skills used (checked `~/.config/opencode/skills`):
+- `tdd` — pure-math rule tests written at public seams (`compute_rule_based`,
+  HTTP endpoint); expected values are worked examples, not recomputed.
+- `implement-spec` — spec (`docs/management/m4-gap-proposals/01-backtesting.md`
+  §2 Option B / §13 item 6) read first; scope held to the ticket.
+
+Implementation Summary:
+- Phase 2 rule strategies in `rules.py`, all deterministic, no network:
+  - MA_CROSSOVER: long while `SMA(fast) > SMA(slow)`, flat otherwise.
+  - RSI_THRESHOLD: enter `RSI(period) < oversold`, exit `RSI(period) > overbought`
+    (Wilder smoothing).
+  - MOMENTUM: enter while trailing `period` return > threshold.
+  - Signal at `close[t]` sets the position held over `(t, t+1]` → no look-ahead.
+  - Cost = `|Δposition| × (fee_bps + slippage_bps)`, charged at each change.
+  - Too-few candles → `{"calculation_status": "UNAVAILABLE", "reason": ...}`
+    (never a crash, never a guessed value). Bad config raises `InsufficientData`.
+- `run_backtest_for_assets(..., rule_config=...)`: rule strategies take exactly
+  one symbol (else `INVALID_CONFIG`); UNAVAILABLE persists an `AnalyticsRun`
+  with `execution_status="UNAVAILABLE"`. BUY_HOLD / STATIC_WEIGHT unchanged.
+- Persist per metric row: `strategy_type`, `entry_rule`, `exit_rule`,
+  `trade_count`, `win_rate` (plus existing long-format metrics).
+- Endpoint `POST /api/v1/analytics/backtest`: `strategy` pattern extended, new
+  optional rule config (`ma_fast`, `ma_slow`, `rsi_period`, `rsi_oversold`,
+  `rsi_overbought`, `momentum_period`, `momentum_threshold`).
+- Migration `f2b3c4d5e6a7` (down_revision `e8a9b0c1d2e3`) adds the 5 columns.
+
+Tests Executed:
+- `backend/.venv/Scripts/python.exe -m pytest tests/test_backtest_phase2.py -v`
+- Full suite: `... -m pytest -q` (from `backend/`, not parallel).
+
+Test Results:
+- `tests/test_backtest_phase2.py`: 16 passed (9 pure-math + 7 endpoint/persist).
+- Full suite: **397 passed, 1 skipped** (baseline 381 + 16 new). No regression.
+
+Live verification (TestClient via app startup; dev DB `pims`, 1h CRYPTO candles):
+- Migration applied: `e8a9b0c1d2e3 -> f2b3c4d5e6a7`.
+- `POST /api/v1/analytics/backtest` `strategy=MA_CROSSOVER` (ma_fast 10, ma_slow 30,
+  fee 10bps, slippage 5bps, limit 300):
+
+| symbol | status | trades | win_rate | total_return | sharpe | max_dd |
+|---|---|---|---|---|---|---|
+| BTCUSDT | COMPLETED | 6 | 0.500 | -7.22% | -0.640 | 7.46% |
+| SOLUSDT | COMPLETED | 6 | 0.333 | -7.85% | -0.591 | 8.93% |
+| ETHUSDT | COMPLETED | 3 | 0.333 | -4.04% | -0.305 | 7.66% |
+
+- Persistence confirmed: 9 metric rows per run with
+  `strategy_type=MA_CROSSOVER`, `entry_rule=SMA(10) > SMA(30)`,
+  `exit_rule=SMA(10) < SMA(30)`, `trade_count`, `win_rate` populated.
+
+Known Issues / Limitations:
+- Rule-based runs are single-asset (one symbol per run); multi-asset rule
+  portfolios are not implemented → `INVALID_CONFIG` if >1 symbol.
+- Win rate for rule strategies is trade-level (closed trades; an open trade is
+  marked to the last close), unlike the Phase 1 period-level win rate.
+- MOMENTUM uses a fixed threshold comparison; no volatility scaling.
+- Short selling not supported (flat/long only).
+
+Architecture Changes:
+- None. Additive engine module + additive nullable columns + extended request
+  fields. No core tech, API contract, or approved schema changed.
+
+Next Recommended Task:
+- Owner decision on multi-asset rule portfolios + short support, then wire
+  scanner/technical signals into a RULE_BASED scanner-backed strategy.
