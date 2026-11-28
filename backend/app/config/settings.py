@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = ""
 
+    # FRED macro data provider (M4 Macro Engine). Public US macro series.
+    fred_api_key: str = ""
+    fred_base_url: str = "https://api.stlouisfed.org"
+
     # Research orchestration policy (AGENTS.md: scheduled trigger disabled by default)
     research_cooldown_seconds: int = 900
     research_max_retries: int = 2

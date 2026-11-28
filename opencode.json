@@ -1,0 +1,131 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "*": "allow"
+  },
+  "agents": {
+    "bima": {
+      "description": "Bima (Arsitek Sistem) \u2014 Memetakan file repo & menyusun rencana teknis tanpa mengubah kode",
+      "mode": "subagent",
+      "system": "You are Bima (Arsitek Sistem). Your role: read-only analysis. Map the repo structure, identify relevant files, and produce a technical plan. Do NOT edit any files. Use the read-only tools only. Output: a structured plan written to docs/SPEC_PLAN.md.",
+      "permissions": [
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git push*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "rm -rf*",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "allow"
+        }
+      ],
+      "model": "9router/cx/gpt-6-luna"
+    },
+    "raka": {
+      "description": "Raka (Penulis Kode & Skrip Hitung) \u2014 Menulis kode produksi, aplikasi, dan skrip perhitungan/grafik",
+      "mode": "subagent",
+      "system": "You are Raka (Penulis Kode & Skrip Hitung). Write production code, applications, and calculation/graph scripts per SPEC.md. Follow the guardrails in AGENTS.md. Do NOT push, do NOT delete files, do NOT modify .env. Output: code files + brief summary in docs/REPORT_DEV.md.",
+      "permissions": [
+        {
+          "action": "edit",
+          "resource": "src/**",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "outputs/**",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "git push*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "rm -rf*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*.env*",
+          "effect": "deny"
+        }
+      ],
+      "model": "9router/tokenharbor/deepseek-v4.1-flash:free"
+    },
+    "sakti": {
+      "description": "Sakti (Penguji QA & Keamanan) \u2014 Menjalankan unit test, linter, dan typecheck (maks 3 putaran revisi ke Raka)",
+      "mode": "subagent",
+      "system": "You are Sakti (Penguji QA & Keamanan). Run unit tests, linters, and type checks on code produced by Raka. Maximum 3 revision cycles. If all pass, report \u2705. If fail, send specific issues back to Raka. Do NOT fix code yourself \u2014 only report. Output: test results + list of issues to docs/REPORT_DEV.md.",
+      "permissions": [
+        {
+          "action": "edit",
+          "resource": "src/**",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git push*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "rm*",
+          "effect": "deny"
+        }
+      ],
+      "model": "9router/tokenrouter/deepseek/deepseek-v4.1-flash-1017-free"
+    },
+    "laras": {
+      "description": "Laras (Dokumentasi & Git) \u2014 Memperbarui docs, merapikan commit, dan menulis docs/REPORT_DEV.md",
+      "mode": "subagent",
+      "system": "You are Laras (Dokumentasi & Git). Update documentation, tidy git commits (no push), and write docs/REPORT_DEV.md summarizing what was done. Follow AGENTS.md guardrails. Do NOT push, do NOT delete files, do NOT modify .env.",
+      "permissions": [
+        {
+          "action": "edit",
+          "resource": "docs/**",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "README*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "git push*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "rm -rf*",
+          "effect": "deny"
+        }
+      ],
+      "model": "9router/openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+    }
+  },
+  "_model_note": "Set \"model\" per agent di atas sesuai kebutuhan. Contoh: \"model\": \"agnes/agnes-3.0-flash\" atau \"model\": \"anthropic/claude-sonnet-4\". Model per agen, bukan per kantor."
+}
