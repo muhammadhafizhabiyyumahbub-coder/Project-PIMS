@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.envelope import error_response, success_response
+from app.api.envelope import error_response, server_error, success_response
 from app.core.db import get_db
 from app.database.repositories import portfolio as portfolio_repo
 from app.engines.portfolio.performance import performance_for_portfolio
@@ -131,7 +131,7 @@ def get_analytics_performance(
     try:
         result = performance_for_portfolio(db, pid, start=start_dt, end=end_dt)
     except Exception as exc:
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     return success_response({
         "portfolio_id": str(pid),
@@ -168,7 +168,7 @@ def get_analytics_risk(
     try:
         result = risk_for_portfolio(db, pid, window_days)
     except Exception as exc:
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     metrics = {k: _serialize_return(v) for k, v in result.metrics.items()}
     return success_response({
@@ -206,7 +206,7 @@ def get_analytics_allocation(
     try:
         result = allocation_for_portfolio(db, pid)
     except Exception as exc:
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     # Build slices
     slices = {}
@@ -282,7 +282,7 @@ def get_analytics_technical(
         if not candles:
             return error_response("NOT_FOUND", f"no candles for asset {asset_id} timeframe {timeframe}", 404)
     except Exception as exc:
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     # Use the last candle's close_time as observation_time
     observation_time = candles[-1]["close_time"]
@@ -341,7 +341,7 @@ def get_analytics_market_regime(
         if not candles:
             return error_response("NOT_FOUND", f"no candles for asset {asset_id} timeframe {timeframe}", 404)
     except Exception as exc:
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     # Use the last candle's close_time
     observation_time = candles[-1]["close_time"]
@@ -474,7 +474,7 @@ def run_analytics_backtest(
         return error_response("INVALID_CONFIG", str(exc), 422)
     except Exception as exc:
         db.rollback()
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     return success_response(result)
 
@@ -516,7 +516,7 @@ def run_analytics_attribution(
         db.commit()
     except Exception as exc:
         db.rollback()
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     # Serialize breakdown and return
     breakdown = []
@@ -572,7 +572,7 @@ def run_analytics_fundamental(
         return error_response("INVALID_CONFIG", str(exc), 422)
     except Exception as exc:
         db.rollback()
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     return success_response({
         "run_id": result["run_id"],
@@ -612,7 +612,7 @@ def run_analytics_sentiment(
         return error_response("INVALID_CONFIG", str(exc), 422)
     except Exception as exc:
         db.rollback()
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     return success_response({
         "run_id": result["run_id"],
@@ -656,7 +656,7 @@ def get_analytics_macro(
         return error_response("INVALID_CONFIG", str(exc), 422)
     except Exception as exc:
         db.rollback()
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     return success_response(result)
 
@@ -711,7 +711,7 @@ def run_analytics_scenario(payload: "ScenarioRequest", db: Session = Depends(get
         db.commit()
     except Exception as exc:
         db.rollback()
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
     return success_response({
         "run_id": result["run_id"],
         "portfolio_id": result["portfolio_id"],
@@ -766,6 +766,6 @@ def run_analytics_factor(payload: "FactorRequest", db: Session = Depends(get_db)
         return error_response("INVALID_CONFIG", str(exc), 422)
     except Exception as exc:
         db.rollback()
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     return success_response(result)

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.envelope import error_response, success_response
+from app.api.envelope import error_response, server_error, success_response
 from app.core.db import get_db
 from app.database.repositories import analytics as analytics_repo
 from app.database.repositories import portfolio as repo
@@ -82,7 +82,7 @@ def create_analytics_run(
         return error_response("VALIDATION_ERROR", str(exc), 422)
     except Exception as exc:
         db.rollback()
-        return error_response("SERVER_ERROR", str(exc), 500)
+        return server_error(exc)
 
     # Serialize results based on type
     if analysis_type == "performance":

@@ -138,6 +138,18 @@ Next Recommended Task:
 
 ---
 
+## Appendix A — QA (Sakti, 2026-11-28)
+
+Full report: `docs/QA_REPORT.md`. Ringkas:
+
+- Suite dari root repo (tanpa run paralel): **377 passed, 1 failed, 1 skipped** (379). Satu-satunya gagal: `test_correlation_engine.py::test_correlation_endpoint_persists_results` (`from tests.conftest import` → `ModuleNotFoundError` bila pytest dijalankan dari root; lulus dari `backend/`). Klaim "367 passed" hanya valid dengan CWD `backend/`.
+- Suite **tidak paralel-safe**: run bersamaan di `pims_test` memicu `DeadlockDetected` + `UndefinedTable` (contoh terukur: 62 errors).
+- `conftest` teardown `drop_all` meninggalkan `alembic_version` stamped → `pims_test` kosong tanpa tabel dan `alembic upgrade head` no-op.
+- Keamanan: tidak ada secret hardcoded; SQLi bersih; temuan: tanpa auth + bind `0.0.0.0`, `str(exc)` bocor di 12 handler `analytics_v2.py`, port DB dipublish, `PIMS_FRED_API_KEY` tidak ada di `.env.example`/compose.
+- Lint: 235 temuan ruff (app) / 530 (tests); `mypy` tidak terpasang → typecheck tidak dijalankan.
+
+---
+
 # PIMS — Development Report (M4 Macro Engine — formula audit fixes)
 
 TASK REPORT
@@ -226,3 +238,60 @@ Architecture Changes:
 Next Recommended Task:
 - Silence the httpx INFO URL log (secret leak), and owner decision on the
   3-month UNRATE delta + z-score window (`ddof`, window) per audit item 3/5.
+
+---
+
+TASK REPORT
+
+Task: Fix temuan keamanan Sakti Q1 (High) + Q2 (Medium)
+Status: DONE (implemented + tested)
+
+Files Created:
+- docs/SECURITY_NOTES.md
+- backend/tests/test_security_q2.py
+
+Files Modified:
+- backend/Dockerfile (comment: why container listens 0.0.0.0)
+- docker-compose.yml (hapus publish 5432; backend 127.0.0.1:8000:8000)
+- backend/app/api/envelope.py (helper `server_error`)
+- backend/app/api/rest/analytics_v2.py (12x SERVER_ERROR -> server_error)
+- backend/app/api/rest/analytics.py (1x SERVER_ERROR -> server_error)
+
+Implementation Summary:
+- Q1: port DB tidak lagi dipublish; backend hanya host-local (127.0.0.1).
+  Dockerfile tetap `--host 0.0.0.0` karena `frontend` service memanggil
+  `http://backend:8000` lewat jaringan compose — bind loopback akan memutusnya.
+  Kontrol eksposur ditaruh di publish binding compose. Asumsi single-user +
+  firewall lokal + auth = Phase 2 didokumentasikan di docs/SECURITY_NOTES.md.
+  (Deviasi dari instruksi Q1 dicatat sebagai ISSUE di SECURITY_NOTES §2.)
+- Q2: helper `server_error(exc)` di app/api/envelope.py -> `logger.exception`
+  detail ke server log, klien menerima generik "Internal error (see server logs)".
+  Semua 13 titik `error_response("SERVER_ERROR", str(exc), 500)` diganti
+  (12 di analytics_v2.py + 1 di analytics.py). QA menulis "14 tempat" tapi
+  hanya melisting 12; total nyata setelah grep = 13.
+
+Tests Executed:
+- backend/.venv/Scripts/python.exe -m pytest tests/test_security_q2.py -q  (dari backend/)
+- backend/.venv/Scripts/python.exe -m pytest backend/tests/ -q --tb=short  (dari root)
+
+Test Results:
+- test_security_q2.py: 3 passed.
+- Full suite (root): 380 passed, 1 failed, 1 skipped, 411.91s.
+- 1 failed = Q3 pre-existing (`test_correlation_engine.py:152`
+  `ModuleNotFoundError: No module named 'tests.conftest'`) — di luar scope
+  task ini (bukan Q1/Q2), sudah dicatat di docs/QA_REPORT.md.
+
+Skills used (checked ~/.config/opencode/skills):
+- `tdd` — ada; dipakai ringan (test red/green untuk Q2: assert 500 generik).
+- `simplify-code` — TIDAK ada di direktori skill (tidak terinstal), tidak dipakai.
+
+Known Issues:
+- Q3 correlation test masih gagal bila pytest dijalankan dari root (pre-existing).
+- Lint repo belum bersih (Q10), typecheck tidak tersedia, di luar scope.
+
+Architecture Changes:
+- None. Kontrak API tetap (envelope error sama bentuk, hanya pesan 500 jadi generik).
+
+Next Recommended Task:
+- Q3: perbaiki import helper test (`from conftest import ...` / pindah ke
+  `tests/helpers.py`), agar suite hijau penuh dari root.
