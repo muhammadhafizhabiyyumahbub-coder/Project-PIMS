@@ -1,20 +1,25 @@
 import logging
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-import requests
+import httpx
 
 logger = logging.getLogger(__name__)
 
 
 # Tara subagent
 class FredFetcher:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, transport: Optional[httpx.BaseTransport] = None, timeout: float = 30.0):
         self.api_key = api_key
-        self.base_url = "https://api.stlouisfed.org/fred/series/observations"
+        self.base_url = "https://api.stlouisfed.org"
+        self.transport = transport
+        self.timeout = timeout
 
     def fetch(self, series_id: str) -> List[Dict]:
-        # No key -> UNAVAILABLE (empty), never fabricated data (audit F7).
+        """Fetch FRED observations. Deterministic: mock transport for tests, no network.
+        No key -> UNAVAILABLE (empty), never fabricated data (audit F7).
+        HTTP error -> log + empty (api_key never in log/URL).
+        """
         if not self.api_key or self.api_key == "test_key":
             logger.warning("FRED fetch skipped for %s: missing API key", series_id)
             return []
@@ -24,10 +29,11 @@ class FredFetcher:
             "file_type": "json"
         }
         try:
-            resp = requests.get(self.base_url, params=params, timeout=15)
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            logger.warning("FRED fetch failed for %s: %s", series_id, exc)
+            with httpx.Client(transport=self.transport, timeout=self.timeout) as client:
+                resp = client.get(f"{self.base_url}/fred/series/observations", params=params)
+                resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning("FRED fetch failed for series %s: %s", series_id, exc)
             return []
         out = []
         for obs in resp.json().get("observations", []):

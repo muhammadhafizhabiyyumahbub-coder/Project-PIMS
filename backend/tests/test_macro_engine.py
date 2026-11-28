@@ -297,13 +297,15 @@ def test_fred_fetcher_missing_key_returns_no_data():
 
 
 def test_fred_fetcher_http_error_returns_no_data(monkeypatch):
-    import requests
+    """When httpx.Client raises ConnectError, fetch returns [] (no fabricated data)."""
+    import httpx
 
-    def boom(*args, **kwargs):
-        raise requests.RequestException("down")
-
-    monkeypatch.setattr("app.data.providers.macro.fred_fetch.requests.get", boom)
-    assert FredFetcher("real-key").fetch("CPIAUCSL") == []
+    fetcher = FredFetcher("real-key")
+    # Inject a transport that raises on any request
+    def _failing_transport(request):
+        raise httpx.ConnectError("down")
+    fetcher.transport = httpx.MockTransport(_failing_transport)
+    assert fetcher.fetch("CPIAUCSL") == []
 
 
 def test_fred_adapter_http_error_is_logged(monkeypatch):
