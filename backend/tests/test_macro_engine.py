@@ -360,3 +360,34 @@ def test_fred_http_status_error_does_not_leak_api_key(monkeypatch):
         # our code path must not have logged `str(e)`
         for line in logged:
             assert secret not in line
+
+
+def test_fred_adapter_http_error_no_key_leak(monkeypatch):
+    """REGRESSION (audit C-1): on HTTP error, log records must NOT contain
+    the api_key — httpx str(exc) embeds the full URL (api_key in query string)."""
+    import logging
+    fetcher = FredFetcher("super-secret-key-123")
+
+    def handler(request):
+        return httpx.Response(401, json={"error": "bad key"})
+    fetcher.transport = httpx.MockTransport(handler)
+
+    # Capture log records via a handler on the fred_fetch logger
+    handler_list = []
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            handler_list.append(record)
+
+    cap_handler = _Capture()
+    fetcher_logger = logging.getLogger("app.data.providers.macro.fred_fetch")
+    fetcher_logger.addHandler(cap_handler)
+    try:
+        assert fetcher.fetch("CPIAUCSL") == []
+    finally:
+        fetcher_logger.removeHandler(cap_handler)
+
+    # The api_key must NOT appear in any log record (message or exception str).
+    for rec in handler_list:
+        assert "super-secret-key-123" not in rec.getMessage(), (
+            f"api_key leaked in log: {rec.getMessage()!r}"
+        )

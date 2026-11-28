@@ -27,6 +27,7 @@ from app.database.models.analytics import (
 )
 from app.database.models.scanner import ScannerResult, ScannerRun
 from app.database.models.research import ResearchJob, ResearchReport, ResearchRequest
+from app.database.models.watchlist import Watchlist, WatchlistItem
 
 __all__ = [
     "Asset",
@@ -60,4 +61,6 @@ __all__ = [
     "MarketQuote",
     "FXRate",
     "ScannerConfiguration",
+    "Watchlist",
+    "WatchlistItem",
 ]

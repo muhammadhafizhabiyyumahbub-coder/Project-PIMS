@@ -25,7 +25,7 @@ def parse_uuid(value: str):
 
 class ResearchRequestBody(BaseModel):
     symbol: str = Field(min_length=1)
-    timeframe: str = "1h"
+    timeframe: str = Field(default="1h", pattern=r"^\d+[mhdwM]$")
     request_summary: str | None = None
 
     model_config = {"extra": "forbid"}

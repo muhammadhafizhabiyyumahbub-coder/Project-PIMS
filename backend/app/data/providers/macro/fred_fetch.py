@@ -29,16 +29,18 @@ class FredFetcher:
             "file_type": "json"
         }
         try:
-            with httpx.Client(transport=self.transport, timeout=self.timeout) as client:
+            with httpx.Client(
+                transport=self.transport,
+                timeout=self.timeout,
+            ) as client:
                 resp = client.get(f"{self.base_url}/fred/series/observations", params=params)
                 resp.raise_for_status()
         except httpx.HTTPError as exc:
-            # Never log/raise the request URL: it embeds the api_key (query
-            # param). httpx's str(HTTPStatusError) includes the full URL, so
-            # reduce to status code + a generic reason (audit §26 key-leak).
+            # Never log the exception (httpx str() embeds full URL with api_key).
+            # Only log series_id + status code.
             status = getattr(getattr(exc, "response", None), "status_code", None)
             logger.warning(
-                "FRED fetch failed for series %s: http status %s (api key redacted)",
+                "FRED fetch failed for series %s: http status %s",
                 series_id, status,
             )
             return []

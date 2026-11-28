@@ -60,6 +60,8 @@ TRUNCATE_TABLES = [
     "research_jobs",
     "research_reports",
     "research_requests",
+    "watchlist_items",
+    "watchlists",
     "scanner_results",
     "scanner_runs",
     "technical_results",

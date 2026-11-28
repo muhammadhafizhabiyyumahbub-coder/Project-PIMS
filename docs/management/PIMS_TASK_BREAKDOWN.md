@@ -1,26 +1,39 @@
 # PIMS Task Breakdown — Fase 2 (Lanjutan)
 
 **Disusun:** Nolan (Project Director) + Galih (Manajer Tugas)
-**Tanggal:** 2026-11-28
-**Status PIMS V1:** Release Candidate (belum dirilis) — M4 7/7 engine selesai
-**Gap:** 1 test gagal (fixed d13995c), 3 fitur tertunda
+**Diperbarui:** Galih subagent, 2026-11-28
+**Status PIMS V1:** Release Candidate — M4 7/7 engine selesai + CI fix P0 SELESAI
+**Test:** 397 passed, 0 failed
 
-## Gap dari perencanaan awal
+## Status Gate P0–P8 (perbarui 2026-11-28)
+
+| Gate | Item | Status | Catatan |
+|---|---|---|---|
+| P0 | CI fix (fred_fetch httpx) | **SELESAI** | commit `0bd2313`; test lulus |
+| P1 | Audit engine (Nadia) | **JALAN** | audit rumus engine + verifikasi angka |
+| P2 | — | pending | (P2 scanner sudah SELESAI `7e2f6f4`) |
+| P3 | Real integration test | **SELESAI** | live probe 3 market |
+| P4 | M4 engine (7 engine + macro + backtest P2) | **SELESAI** | 7 engine: correlation/backtesting/factor/attribution/scenario/fundamental/sentiment + macro FRED; backtest P2 |
+| P5–P8 | Roadmap lanjutan | **PENDING** | menunggu P1 audit + P4 |
+
+**Bottleneck saat ini:** P1 audit (Nadia) → kunci P5–P8.
+**Dependensi:** P1 → P5–P8; P4 sudah selesai, tak blokir.
+
+## Gap dari perencanaan awal (M4 gap proposals)
 
 | # | Item | Status | Prioritas | Pemilik | Tenggat |
 |---|---|---|---|---|---|
-| T1 | Macro engine (FRED API) | SEDANG DIKERJAKAN — Raka (Tara: data FRED, Sakti: QA) | P1 | Raka | 2026-11-28 EOD |
-| T2 | Backtest Phase 2 (rule-based) | PENDING — gate §26, blokir T1 | P2 | Raka | 2026-11-29 |
-| T3 | Scenario hypothetical | GATED §26 — blokir T2 | P2 | Raka | 2026-11-30 |
-| T4 | Watchlist (2 tabel) | PENDING — skema decided, tak perlu approval | P2 | Raka | 2026-11-29 |
-| T5 | Fundamental Phase 2 | PENDING — blokir T1 (data provider) | P3 | Raka | 2026-11-30 |
-| T6 | Scheduler analitis | manual, tak urgent | P3 | Raka | fleksibel |
-| T7 | Beta + benchmark + HHI | belum mulai | P3 | Raka | fleksibel |
-| T8 | 9 endpoint gap spec | by-design, owner decision | P3 | Raka | fleksibel |
+| T1 | Macro engine (FRED API) | **SELESAI** (M4) | P4 | Raka/Hermes | — |
+| T2 | Backtest Phase 2 (rule-based) | **SELESAI** (M4, gated §26 hypothetical masih pending) | P4 | Raka/Hermes | — |
+| T3 | Scenario hypothetical | GATED §26 — pending | P5 | Raka | 2026-12 |
+| T4 | Watchlist (2 tabel) | PENDING — skema decided, tak perlu approval | P5 | Raka | 2026-12 |
+| T5 | Fundamental Phase 2 | PENDING — blocked data provider | P5 | Raka | 2026-12 |
+| T6 | Scheduler analitis | manual, tak urgent | P6 | Raka | fleksibel |
+| T7 | Beta + benchmark + HHI | belum mulai | P6 | Raka | fleksibel |
+| T8 | 9 endpoint gap spec | by-design, owner decision | P7 | Raka | fleksibel |
 
-**QA keseluruhan:** Sakti jalan — target suite 355 passed/0 failed.
-**Bottleneck:** T1 (Macro) → kunci T2, T3, T5. QA (Sakti) paralel, tak blokir.
-**Dependensi:** T1→T2→T3; T1→T5; T4 berdiri sendiri.
+**QA keseluruhan:** suite 397 passed / 0 failed (perbarui 2026-11-28).
+**P1 audit (Nadia):** jalan — verifikasi rumus engine M4.
 
 ## Alur kerja (per task)
 
@@ -32,24 +45,22 @@
 6. **Audit rumus** (Nadia, subagent) — verifikasi angka engine
 7. **Browser/Edge** (Nolan) — live-verify dashboard PIMS
 8. **Dokumentasi + git** (Laras, OpenCode) — README, docs, commit
-9. **Obsidian** (Nolan) — vault PIMS + write-read test
+9. **Obsidian** (Nolan + Galih subagent) — vault PIMS + task tracker
 
 ## Dependensi
 
-- T1 (Macro) → butuh FRED key (sudah ada di .env: PIMS_FRED_API_KEY)
-- T2 (Backtest P2) → T1 selesai dulu (macro data untuk benchmark)
-- T3 (Scenario) → T2 selesai
+- P4 M4 → 7 engine selesai + macro FRED + backtest P2
+- P1 audit → kunci P5–P8
+- T3 (Scenario hypothetical) → GATED §26, pending
 - T4 (Watchlist) → skema 2 tabel (decided, tak butuh approval)
-- T5-T8 → T1-T4 selesai
+- T5–T8 → menunggu P1 audit selesai
 
 ## Timeline (perkiraan)
 
 | Fase | Durasi | Output | Status saat ini |
 |---|---|---|---|
-| Macro engine (T1) | 1–2 jam | engine + test + endpoint | SEDANG DIKERJAKAN (Raka) |
-| QA suite (Sakti) | paralel | 355 passed / 0 failed | SEDANG BERJALAN |
-| Backtest P2 (T2) | 1–2 jam | rule-based engine | PENDING — blokir T1 |
-| Watchlist (T4) | 1 jam | tabel + CRUD | PENDING — standalone |
-| Scenario (T3) | 1 jam | hypothetical | GATED §26 — blokir T2 |
-| Fundamental P2 (T5) | 1–2 jam | engine | PENDING — blokir T1 |
-| Docs + push | 30 mnt | README + git | menunggu T1–T5 |
+| P0 CI fix | — | commit 0bd2313 | **SELESAI** |
+| P1 audit (Nadia) | paralel | verifikasi engine | **JALAN** |
+| P4 M4 engine | 1–2 hari | 7 engine + macro + backtest P2 | **SELESAI** |
+| P5–P8 | 1–2 minggu | roadmap lanjutan | **PENDING** |
+| Docs + push | 30 mnt | README + git | menunggu P5 |

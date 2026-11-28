@@ -97,6 +97,13 @@ def test_api_contract_snapshot():
         ("POST", "/api/v1/scanner/configurations"),
         ("POST", "/api/v1/scanner/run"),
         ("POST", "/api/v1/transactions"),
+        ("DELETE", "/api/v1/watchlists/{watchlist_id}"),
+        ("DELETE", "/api/v1/watchlists/{watchlist_id}/items/{asset_id}"),
+        ("GET", "/api/v1/watchlists"),
+        ("GET", "/api/v1/watchlists/{watchlist_id}"),
+        ("PATCH", "/api/v1/watchlists/{watchlist_id}"),
+        ("POST", "/api/v1/watchlists"),
+        ("POST", "/api/v1/watchlists/{watchlist_id}/items"),
     ])
     
     assert current_endpoints == known_endpoints, f"API contract mismatch: {set(current_endpoints) ^ set(known_endpoints)}"
