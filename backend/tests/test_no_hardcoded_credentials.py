@@ -12,7 +12,7 @@ def test_no_postgres_credentials_in_tracked_files():
     pattern = re.compile(r"postgresql\+psycopg://[^:]+:[^:@]+@")
 
     # Files/dirs to exclude
-    excluded = {".venv", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", ".git", "uv.lock"}
+    excluded = {".venv", ".venv-test", "venv", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", ".git", "uv.lock"}
 
     repo_root = Path(__file__).resolve().parents[1]
     violations = []
